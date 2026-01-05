@@ -1,0 +1,65 @@
+{
+  "chain": {
+    "enabled": true,
+    "rpcUrl": "https://sepolia.hpp.io",
+    "wsRpcUrl": null,
+    "routerAddress": "0x31B0d4038b65E2c17c769Bad1eEeA18EEb1dBdF6",
+    "coordinatorAddress": "0x5e055cd47E5d16f3645174Cfe2423D61fe8F4585",
+    "deploymentBlock": 7776,
+    "processingInterval": 5000,
+    "wallet": {
+      "keystorePath": "./.noosphere/keystore.json",
+      "paymentAddress": "0xYourPaymentWalletAddress"
+    }
+  },
+  "scheduler": {
+    "enabled": true,
+    "cronIntervalMs": 60000,
+    "syncPeriodMs": 3000,
+    "maxRetryAttempts": 3
+  },
+  "containers": [
+    {
+      "id": "noosphere-hello-world",
+      "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
+      "port": "8081"
+    },
+    {
+      "id": "noosphere-llm",
+      "image": "ghcr.io/hpp-io/example-llm-noosphere:latest",
+      "port": "8082",
+      "env": {
+        "LLMROUTER_API_KEY": "your-llmrouter-api-key",
+        "LLMROUTER_BASE_URL": "https://your-llm-router-url/llm/v1",
+        "GEMINI_API_KEY": "your-gemini-api-key",
+        "APP_PORT": "8082"
+      }
+    }
+  ],
+  "verifiers": [
+    {
+      "id": "immediate-finalize-verifier",
+      "name": "Immediate Finalize Verifier",
+      "address": "0x672c325941E3190838523052ebFF122146864EAd",
+      "requiresProof": true,
+      "proofService": {
+        "image": "ghcr.io/hpp-io/noosphere-proof-creator:dev",
+        "port": "3001",
+        "command": "npm start",
+        "env": {
+          "RPC_URL": "https://sepolia.hpp.io",
+          "CHAIN_ID": "181228",
+          "IMMEDIATE_FINALIZE_VERIFIER_ADDRESS": "0x672c325941E3190838523052ebFF122146864EAd",
+          "PRIVATE_KEY": "your-proof-service-private-key"
+        },
+        "requirements": {
+          "gpu": false,
+          "memory": "1GB",
+          "cpu": 1
+        }
+      },
+      "verified": true,
+      "description": "Immediate finalization verifier with integrated proof generation service for Noosphere testnet"
+    }
+  ]
+}

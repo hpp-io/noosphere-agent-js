@@ -1,313 +1,505 @@
 # Noosphere Agent (Next.js)
 
-Next.js-based Noosphere agent that uses the `noosphere-sdk` to execute decentralized compute tasks.
+A production-ready Noosphere agent with built-in web dashboard for monitoring and managing decentralized compute tasks.
 
 ## Features
 
-- 🔐 **Keystore-based security** - No raw private keys
-- 📦 **Container registry** - Automatic container discovery
-- ⚡ **Real-time event listening** - WebSocket + HTTP fallback
-- 🔄 **Event replay** - Never miss events during downtime
-- 🐳 **Docker execution** - Run any containerized workload
-- 📊 **Web dashboard** - Monitor agent status (Next.js)
+- 🔐 **Keystore-based Security** - Encrypted wallet storage, no raw private keys
+- 📦 **Container Registry** - Automatic discovery of compute containers and verifiers
+- ⚡ **Real-time Event Processing** - WebSocket + HTTP fallback for blockchain events
+- 🔄 **Automatic Scheduler** - Handles subscription intervals and commitments
+- 🐳 **Docker Integration** - Executes containerized workloads with automatic cleanup
+- 📊 **Web Dashboard** - Real-time monitoring of agent status and earnings
+- 💰 **Computing History** - Track all processed requests, fees, and profitability
+- 🔐 **Verifier Support** - Integrated proof generation services
 
 ## Architecture
 
 ```
 noosphere-agent-js/
-├── agent/              # Background agent process
-│   └── index.ts        # Main agent entry point
-├── app/                # Next.js dashboard
-│   ├── layout.tsx
-│   ├── page.tsx
-│   └── globals.css
-└── lib/                # Shared utilities
+├── agent/                  # TypeScript agent (development)
+│   └── index.ts
+├── run-agent.js           # Production agent entry point
+├── app/                   # Next.js dashboard
+│   ├── page.tsx          # Main dashboard
+│   ├── history/          # Computing history page
+│   └── api/              # API routes
+├── lib/                   # Shared configuration
+│   └── config.ts         # Config loader
+├── scripts/              # Utility scripts
+│   ├── init-keystore.ts  # Keystore initialization
+│   └── send-test-request.ts
+└── config.json           # Main configuration file
 ```
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
-- Docker (for container execution)
-- Noosphere keystore file
+- **Node.js** >= 18.0.0
+- **Docker** >= 20.10.0 (for container execution)
+- **Noosphere Testnet** access or your own deployment
+- **Funded wallet** with ETH for gas fees
 
-## Installation
+## Quick Start
+
+### 1. Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/hpp-io/noosphere-agent-js.git
+cd noosphere-agent-js
+
 # Install dependencies
 npm install
 
-# Copy environment template
+# Copy configuration templates
+cp config.example.json config.json
 cp .env.example .env
-
-# Edit .env with your configuration
-nano .env
 ```
 
-## Configuration
+### 2. Configuration
 
-Edit `.env` with your settings:
+#### Edit `config.json`:
 
-```bash
-# Keystore Configuration
-KEYSTORE_PATH=./.noosphere/keystore.json
-KEYSTORE_PASSWORD=your-secure-password
-
-# Blockchain Configuration
-RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
-WS_RPC_URL=wss://sepolia.infura.io/ws/v3/YOUR_INFURA_KEY
-
-# Contract Addresses
-ROUTER_ADDRESS=0x...
-COORDINATOR_ADDRESS=0x...
-
-# Optional: Start block for event replay
-DEPLOYMENT_BLOCK=0
-```
-
-## First-Time Setup
-
-### 1. Initialize Keystore
-
-If you don't have a keystore yet:
-
-```bash
-# Create keystore initialization script
-node -e "
-const { KeystoreManager } = require('@noosphere/crypto');
-const { ethers } = require('ethers');
-
-async function init() {
-  const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-  const privateKey = process.env.PRIVATE_KEY;
-
-  await KeystoreManager.initialize(
-    './.noosphere/keystore.json',
-    process.env.KEYSTORE_PASSWORD,
-    privateKey,
-    provider
-  );
-
-  console.log('✓ Keystore initialized');
+```json
+{
+  "chain": {
+    "enabled": true,
+    "rpcUrl": "https://sepolia.hpp.io",
+    "wsRpcUrl": null,
+    "routerAddress": "0x31B0d4038b65E2c17c769Bad1eEeA18EEb1dBdF6",
+    "coordinatorAddress": "0x5e055cd47E5d16f3645174Cfe2423D61fe8F4585",
+    "deploymentBlock": 7776,
+    "processingInterval": 5000,
+    "wallet": {
+      "keystorePath": "./.noosphere/keystore.json",
+      "paymentAddress": "0xYourPaymentWalletAddress"
+    }
+  },
+  "scheduler": {
+    "enabled": true,
+    "cronIntervalMs": 60000,
+    "syncPeriodMs": 3000,
+    "maxRetryAttempts": 3
+  },
+  "containers": [
+    {
+      "id": "noosphere-hello-world",
+      "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
+      "port": "8081"
+    }
+  ],
+  "verifiers": [
+    {
+      "id": "immediate-finalize-verifier",
+      "name": "Immediate Finalize Verifier",
+      "address": "0x672c325941E3190838523052ebFF122146864EAd",
+      "requiresProof": true,
+      "proofService": {
+        "image": "ghcr.io/hpp-io/noosphere-proof-creator:dev",
+        "port": "3001",
+        "command": "npm start",
+        "env": {
+          "RPC_URL": "https://sepolia.hpp.io",
+          "CHAIN_ID": "181228",
+          "IMMEDIATE_FINALIZE_VERIFIER_ADDRESS": "0x672c325941E3190838523052ebFF122146864EAd",
+          "PRIVATE_KEY": "your-proof-service-private-key"
+        }
+      }
+    }
+  ]
 }
-
-init();
-"
 ```
 
-### 2. Fund Your Agent Wallet
+#### Edit `.env`:
 
 ```bash
-# Get your agent address
-node -e "
-const { KeystoreManager } = require('@noosphere/crypto');
-const { ethers } = require('ethers');
+# Keystore password (never commit this file!)
+KEYSTORE_PASSWORD=your-secure-password-here
+```
 
-async function getAddress() {
-  const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-  const ks = new KeystoreManager('./.noosphere/keystore.json', process.env.KEYSTORE_PASSWORD);
-  await ks.load();
-  console.log('Agent address:', ks.getEOAAddress());
+### 3. Initialize Keystore
+
+Create your agent keystore with your private key:
+
+```bash
+npm run init:keystore
+```
+
+This will:
+1. Prompt for your EOA private key
+2. Create encrypted keystore at `./.noosphere/keystore.json`
+3. Initialize payment wallet contracts
+4. Display your agent address and payment wallet address
+
+**Update `config.json`** with the displayed payment wallet address:
+```json
+{
+  "chain": {
+    "wallet": {
+      "paymentAddress": "0xYourDisplayedPaymentWallet"
+    }
+  }
 }
-
-getAddress();
-"
 ```
 
-Send ETH to this address for gas fees.
+### 4. Fund Your Wallets
 
-## Running the Agent
+You need to fund two wallets:
 
-### Development Mode
+1. **Agent EOA Wallet** (for gas fees):
+   ```bash
+   # Your EOA address is displayed after keystore initialization
+   # Send testnet ETH to this address
+   ```
+
+2. **Payment Wallet** (for receiving fees):
+   ```bash
+   # Your payment wallet address is displayed after keystore initialization
+   # This is automatically created by WalletFactory
+   ```
+
+### 5. Run the Agent
 
 ```bash
-# Run the agent (background process)
+# Start the agent
 npm run agent
 
-# Run the Next.js dashboard (separate terminal)
+# In a separate terminal, start the web dashboard
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
 
-### Production Mode
+## Web Dashboard
 
-```bash
-# Build the Next.js app
-npm run build
+The dashboard provides real-time monitoring:
 
-# Start both agent and web server
-npm run agent &
-npm start
-```
+### Main Dashboard (`/`)
+- **Agent Status**: Running state, address, balance
+- **Payment Wallets**: Wallet addresses and balances
+- **Available Containers**: Registered compute containers with tags
+- **Available Verifiers**: Registered verifiers with proof services
+- **Container Registry Stats**: Total containers and verifiers
 
-## Agent Functionality
-
-The agent performs the following operations:
-
-1. **Load Keystore** - Securely loads wallet from encrypted keystore
-2. **Connect to Blockchain** - WebSocket (preferred) or HTTP polling
-3. **Load Registry** - Fetch container and verifier metadata
-4. **Listen for Events** - Monitor `RequestStarted` events from Router contract
-5. **Self-Coordination** - Determine priority based on position hash
-6. **Execute Containers** - Run Docker containers with request data
-7. **Submit Results** - Call Coordinator contract to deliver results
-8. **Earn Fees** - Receive payment tokens for successful executions
+### Computing History (`/history`)
+- **Request Timeline**: All processed requests with timestamps
+- **Financial Tracking**: Fee earned, gas costs, net profit per request
+- **Detailed View**: Click any row to see full request details
+- **Input/Output Data**: View request inputs and computation results
+- **Pagination**: Navigate through historical requests
 
 ## How It Works
 
-### Event Flow
+### Event Processing Flow
 
 ```
-1. User creates subscription → Router emits RequestStarted
-2. Agent listens for RequestStarted events
-3. Agent calculates priority (self-coordination)
-4. Agent waits based on priority (higher = less delay)
-5. Agent checks if request is already fulfilled
-6. Agent pulls container from registry
-7. Agent executes container with request data
-8. Agent submits result to Coordinator
-9. Agent receives fee payment
+1. User creates subscription → Router emits RequestStarted event
+2. Agent listens for events (WebSocket or HTTP polling)
+3. Scheduler manages subscription intervals and commitments
+4. Agent executes compute container with request data
+5. Container returns result and optional proof
+6. Agent submits result to Coordinator contract
+7. Coordinator verifies result (with verifier if configured)
+8. Agent receives fee payment to payment wallet
 ```
 
-### Self-Coordination
+### Scheduler Service
 
-Agents coordinate without a central hub using **position-based priority**:
+The built-in scheduler handles:
+- **Subscription Sync**: Periodically fetches active subscriptions
+- **Interval Commitments**: Commits to serving subscription intervals
+- **Automatic Execution**: Triggers compute at committed intervals
+- **Transaction Management**: Tracks pending transactions and retries
 
-```typescript
-priority = hash(requestId + agentAddress)
-delay = (priority / MAX_UINT32) * MAX_DELAY
+### Container Management
 
-// Example:
-// Agent A: priority = 0x0000FFFF → delay = 0ms (high priority)
-// Agent B: priority = 0xFFFF0000 → delay = 200ms (low priority)
-```
+Containers are automatically:
+- **Pulled** from registry on agent startup
+- **Started** as persistent Docker containers
+- **Executed** when requests arrive
+- **Cleaned up** when agent stops
 
-This ensures deterministic, fair ordering without communication between agents.
+### Verifier Integration
 
-## Container Execution
+When verifiers are configured:
+- **Proof Service Containers** start automatically
+- **Proofs** are generated alongside compute results
+- **Verification** happens on-chain before finalization
 
-Containers receive request data via stdin:
+## Configuration Reference
 
-```json
-{
-  "requestId": "0x123...",
-  "interval": 42
-}
-```
+### Chain Configuration
+| Field | Description | Example |
+|-------|-------------|---------|
+| `rpcUrl` | Blockchain RPC endpoint | `https://sepolia.hpp.io` |
+| `wsRpcUrl` | WebSocket RPC endpoint (optional) | `wss://sepolia.hpp.io` |
+| `routerAddress` | Router contract address | `0x31B0...` |
+| `coordinatorAddress` | Coordinator contract address | `0x5e05...` |
+| `deploymentBlock` | Start block for event replay | `7776` |
+| `wallet.keystorePath` | Path to keystore file | `./.noosphere/keystore.json` |
+| `wallet.paymentAddress` | Payment wallet address | `0xYour...` |
 
-Containers output results to stdout:
+### Scheduler Configuration
+| Field | Description | Default |
+|-------|-------------|---------|
+| `enabled` | Enable scheduler service | `true` |
+| `cronIntervalMs` | Commitment generation interval | `60000` (1 min) |
+| `syncPeriodMs` | Subscription sync period | `3000` (3 sec) |
+| `maxRetryAttempts` | Max retries for failed transactions | `3` |
 
-```json
-{
-  "result": "computation result",
-  "proof": "optional zk-proof"
-}
-```
+### Container Configuration
+| Field | Description | Required |
+|-------|-------------|----------|
+| `id` | Unique container identifier | Yes |
+| `image` | Docker image name | Yes |
+| `port` | Container port | Yes |
+| `env` | Environment variables | No |
 
-## Monitoring
+### Verifier Configuration
+| Field | Description | Required |
+|-------|-------------|----------|
+| `id` | Unique verifier identifier | Yes |
+| `name` | Human-readable name | Yes |
+| `address` | Verifier contract address | Yes |
+| `requiresProof` | Whether proof generation is needed | No |
+| `proofService` | Proof service configuration | If `requiresProof` is `true` |
 
-### Logs
+## Monitoring & Troubleshooting
+
+### Agent Logs
 
 The agent outputs structured logs:
 
 ```
-🚀 Starting Noosphere Agent...
-✓ Keystore loaded
-✓ Registry loaded: 12 containers
-✓ Connected to blockchain (WebSocket)
-✓ Listening for events from block 5234567
+🚀 Starting Noosphere Agent from config.json...
+✓ ABIs loaded
+✓ Registry loaded: 3 containers, 1 verifiers
+🔐 Loaded 1 proof service containers
+✓ Agent initialized from keystore
 
-[2024-12-26T12:00:00.000Z] RequestStarted: 0x123...
-  SubscriptionId: 42
-  ContainerId: 0xabc...
-  Priority wait: 150ms
-  ⚙️  Executing container...
-  ✓ Execution completed in 2340ms
-  📤 Submitting result...
-  ✓ Result submitted
-  💰 Fee earned: 0.001 ETH
+🚀 Preparing 3 containers...
+  ✓ ghcr.io/hpp-io/example-hello-world-noosphere:latest ready
+  ✓ ghcr.io/hpp-io/example-llm-noosphere:latest ready
+  ✓ Started persistent container noosphere-proof-service-immediate-finalize-verifier
+
+✓ Noosphere Agent is running
+📊 Total subscriptions in registry: 4
 ```
 
-### Dashboard
+### Common Issues
 
-Access the web dashboard at `http://localhost:3000` to view:
-- Agent status
-- Recent requests processed
-- Earnings summary
-- Container registry
+#### Agent won't start
 
-## Troubleshooting
-
-### Agent won't start
-
-**Error**: `Keystore not found`
-- Solution: Run keystore initialization (see First-Time Setup)
+**Error**: `KEYSTORE_PASSWORD environment variable is required`
+- **Solution**: Make sure `.env` file exists with `KEYSTORE_PASSWORD=your-password`
 
 **Error**: `Docker is not available`
-- Solution: Ensure Docker daemon is running
+- **Solution**: Start Docker daemon: `sudo systemctl start docker` (Linux) or open Docker Desktop
 
-**Error**: `Insufficient balance`
-- Solution: Fund your agent wallet with ETH
+**Error**: `Configuration file not found`
+- **Solution**: Create `config.json` from `config.example.json`
 
-### No requests received
+#### No requests received
 
-- Check if subscriptions exist on the Router contract
-- Verify Router address in .env
-- Check deployment block is correct
-- Ensure network connectivity
+1. **Check subscription exists**:
+   ```bash
+   # View agent status in dashboard
+   open http://localhost:3000
+   ```
 
-### Container execution fails
+2. **Verify deployment block**:
+   - Make sure `deploymentBlock` in `config.json` is before first subscription
 
-- Verify Docker is running
-- Check container exists in registry
-- Ensure container has correct image name
-- Check Docker logs: `docker logs <container-id>`
+3. **Check network connectivity**:
+   - Verify RPC URL is accessible
+   - Test WebSocket connection if configured
+
+#### Container execution fails
+
+**Error**: `ports are not available: bind: address already in use`
+- **Solution**: Change container port in `config.json` to unused port
+
+**Error**: `Failed to pull image`
+- **Solution**: Verify image name and ensure you have network access to registry
+
+#### Proof service issues
+
+**Error**: `Proof service container not starting`
+- **Solution**: Check proof service port doesn't conflict with other services
+- **Solution**: Verify `PRIVATE_KEY` is set in proof service `env` configuration
+
+### Checking Container Status
+
+```bash
+# List running containers
+docker ps
+
+# View container logs
+docker logs noosphere-noosphere-hello-world
+
+# View proof service logs
+docker logs noosphere-proof-service-immediate-finalize-verifier
+```
+
+## Production Deployment
+
+### Build for Production
+
+```bash
+# Build Next.js dashboard
+npm run build
+
+# Start agent and dashboard
+npm run agent &
+npm start
+```
+
+### Using PM2 (Recommended)
+
+```bash
+# Install PM2
+npm install -g pm2
+
+# Start agent
+pm2 start run-agent.js --name noosphere-agent
+
+# Start dashboard
+pm2 start npm --name noosphere-dashboard -- start
+
+# Save configuration
+pm2 save
+
+# Setup auto-restart on system boot
+pm2 startup
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install --production
+
+# Copy application
+COPY . .
+
+# Build Next.js
+RUN npm run build
+
+# Expose dashboard port
+EXPOSE 3000
+
+# Start both agent and dashboard
+CMD ["sh", "-c", "node run-agent.js & npm start"]
+```
+
+## Security Best Practices
+
+- ✅ **Never commit** `.env` or `config.json` with real credentials
+- ✅ **Backup keystore** file to secure offline storage
+- ✅ **Use strong password** for keystore encryption (20+ characters)
+- ✅ **Rotate credentials** regularly
+- ✅ **Monitor wallet balances** to ensure sufficient gas funds
+- ✅ **Review container images** before adding to configuration
+- ✅ **Use separate wallets** for different environments (testnet/mainnet)
 
 ## Development
 
-### Adding Custom Containers
+### Running in Development Mode
 
-Add containers to your local registry:
+```bash
+# Run TypeScript agent with auto-reload
+npm run agent:legacy
 
-```typescript
-import { RegistryManager } from '@noosphere/registry';
-
-const registry = new RegistryManager();
-await registry.load();
-
-await registry.addContainer({
-  id: 'my-custom-container',
-  name: 'My Model',
-  imageName: 'myrepo/my-model:latest',
-  port: 8000,
-  statusCode: 'ACTIVE',
-  tags: ['custom', 'ml'],
-});
+# Run Next.js in dev mode
+npm run dev
 ```
 
 ### Testing
 
 ```bash
-# Install test dependencies
-npm install --save-dev jest @types/jest
+# Send a test request
+npm run send:request
 
-# Run tests
-npm test
+# View test request in history
+open http://localhost:3000/history
 ```
 
-## Security
+### Adding Custom Containers
 
-- **Never commit `.env` file** - Contains sensitive credentials
-- **Backup keystore file** - Store securely offline
-- **Use strong password** - For keystore encryption
-- **Rotate keys regularly** - Update keystore password periodically
-- **Monitor wallet balance** - Ensure sufficient funds for gas
+1. **Build your container** following Noosphere container specs
+2. **Publish to registry** (GitHub Container Registry, Docker Hub, etc.)
+3. **Add to config.json**:
+   ```json
+   {
+     "containers": [
+       {
+         "id": "my-custom-container",
+         "image": "ghcr.io/myorg/my-container:latest",
+         "port": "8090",
+         "env": {
+           "MY_ENV_VAR": "value"
+         }
+       }
+     ]
+   }
+   ```
+
+## API Reference
+
+### Agent Status API
+
+```bash
+GET /api/agent/status
+```
+
+Returns:
+```json
+{
+  "agentAddress": "0xAbDaA7Ce...",
+  "balance": "0.1234",
+  "paymentWallets": [
+    {
+      "address": "0x13F09...",
+      "balance": "0.5678"
+    }
+  ]
+}
+```
+
+### Computing History API
+
+```bash
+GET /api/history?limit=10&offset=0
+```
+
+Returns:
+```json
+{
+  "history": [
+    {
+      "requestId": "0x123...",
+      "subscriptionId": "1",
+      "containerId": "noosphere-hello-world",
+      "timestamp": "2024-01-05T12:00:00Z",
+      "txHash": "0xabc...",
+      "blockNumber": 12345,
+      "feeEarned": "1000000000",
+      "gasFee": "200000",
+      "input": "0x...",
+      "output": "0x...",
+      "isPenalty": false
+    }
+  ],
+  "total": 100
+}
+```
 
 ## License
 
-BSD-3-Clause-Clear
+MIT License - see [LICENSE](LICENSE) file for details
 
-## Support
-
-- Documentation: [https://github.com/hpp-io/noosphere-sdk](https://github.com/hpp-io/noosphere-sdk)
-- Issues: [https://github.com/hpp-io/noosphere-agent-js/issues](https://github.com/hpp-io/noosphere-agent-js/issues)

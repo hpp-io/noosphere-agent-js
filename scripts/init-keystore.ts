@@ -5,22 +5,26 @@
  * Usage: PRIVATE_KEY=0x... KEYSTORE_PASSWORD=... node scripts/init-keystore.ts
  */
 
-import { config } from 'dotenv';
+import { config as loadEnv } from 'dotenv';
 import { ethers } from 'ethers';
 import { KeystoreManager } from '@noosphere/crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
-config();
+loadEnv();
 
 async function main() {
   console.log('🔐 Initializing Noosphere Agent Keystore\n');
 
-  // Validate environment variables
+  // Load configuration from config.json
+  const configPath = path.join(process.cwd(), 'config.json');
+  const configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+  // Get secrets from environment variables
   const privateKey = process.env.PRIVATE_KEY;
   const password = process.env.KEYSTORE_PASSWORD;
-  const rpcUrl = process.env.RPC_URL;
-  const keystorePath = process.env.KEYSTORE_PATH || './.noosphere/keystore.json';
+  const rpcUrl = configData.chain.rpcUrl;
+  const keystorePath = configData.chain.wallet.keystorePath;
 
   if (!privateKey) {
     throw new Error('PRIVATE_KEY environment variable is required');
@@ -28,10 +32,6 @@ async function main() {
 
   if (!password) {
     throw new Error('KEYSTORE_PASSWORD environment variable is required');
-  }
-
-  if (!rpcUrl) {
-    throw new Error('RPC_URL environment variable is required');
   }
 
   // Validate private key format

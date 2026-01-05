@@ -36,3 +36,11 @@ next-env.d.ts
 # noosphere
 .noosphere/
 *.keystore.json
+config.json
+
+# IDE
+.idea/
+.vscode/
+
+# test files
+test-*.js

@@ -8,20 +8,26 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "agent": "tsx agent/index.ts",
-    "init": "tsx scripts/init-keystore.ts"
+    "agent": "node run-agent.js",
+    "agent:legacy": "tsx agent/index.ts",
+    "init": "tsx scripts/init-keystore.ts",
+    "setup:wallet": "tsx scripts/setup-agent-wallet.ts",
+    "test:history": "tsx scripts/test-history-api.ts",
+    "check:events": "tsx scripts/check-blockchain-events.ts",
+    "send:request": "tsx scripts/send-test-request.ts"
   },
   "dependencies": {
     "@noosphere/agent-core": "file:../noosphere-sdk/packages/agent-core",
     "@noosphere/crypto": "file:../noosphere-sdk/packages/crypto",
     "@noosphere/registry": "file:../noosphere-sdk/packages/registry",
+    "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "dotenv": "^16.3.0",
     "ethers": "^6.13.0",
-    "next": "^16.1.1",
+    "next": "15.5.9",
     "postcss": "^8.5.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
