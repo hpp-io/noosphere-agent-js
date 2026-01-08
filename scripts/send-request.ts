@@ -8,7 +8,7 @@
  *     PRIVATE_KEY=0x... CLIENT_ADDRESS=0x... WALLET_FACTORY_ADDRESS=0x... npm run send:request
  *
  *   Scheduled request:
- *     PRIVATE_KEY=0x... SCHEDULED_CLIENT_ADDRESS=0x... WALLET_FACTORY_ADDRESS=0x... npm run send:scheduled
+ *     PRIVATE_KEY=0x... SCHEDULED_CLIENT_ADDRESS=0x... WALLET_FACTORY_ADDRESS=0x... npm run send:request
  *
  * Environment Variables:
  *   PRIVATE_KEY - Your wallet private key
@@ -16,6 +16,9 @@
  *   SCHEDULED_CLIENT_ADDRESS - ScheduledComputeClient contract address (for scheduled)
  *   WALLET_FACTORY_ADDRESS - WalletFactory contract address
  *   RPC_URL - Optional RPC URL (default: https://sepolia.hpp.io)
+ *   CONTAINER_ID - Container ID (default: noosphere-hello-world)
+ *   MAX_EXECUTIONS - Max executions for scheduled (default: 3)
+ *   INTERVAL_SECONDS - Interval in seconds for scheduled (default: 180)
  */
 
 import { config as loadEnv } from 'dotenv';

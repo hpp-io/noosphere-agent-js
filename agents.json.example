@@ -1,0 +1,18 @@
+{
+  "agents": [
+    {
+      "id": "sepolia-main",
+      "name": "Sepolia Main Agent",
+      "configPath": "./config.json",
+      "keystorePassword": "${KEYSTORE_PASSWORD}",
+      "enabled": true
+    },
+    {
+      "id": "sepolia-backup",
+      "name": "Sepolia Backup Agent",
+      "configPath": "./configs/agent-backup.json",
+      "keystorePassword": "${KEYSTORE_PASSWORD_2}",
+      "enabled": false
+    }
+  ]
+}

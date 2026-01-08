@@ -8,20 +8,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "agent": "tsx run-agent.ts",
-    "agent:sync": "tsx run-agent.ts --sync",
+    "agent": "tsx src/app.ts",
     "init": "tsx scripts/init-keystore.ts",
     "setup:wallet": "tsx scripts/setup-agent-wallet.ts",
-    "approve:wallet": "tsx scripts/approve-payment-wallet.ts",
-    "trigger:first": "tsx scripts/trigger-first-execution.ts",
     "send:request": "tsx scripts/send-request.ts",
-    "send:scheduled": "tsx scripts/send-request.ts",
-    "db:replay": "tsx scripts/db/replay-events.ts",
     "db:reset": "tsx scripts/db/reset-checkpoint.ts",
     "db:audit": "tsx scripts/db/audit-events.ts",
-    "db:migrate": "tsx scripts/db/migrate-to-sqlite.ts",
-    "db:migrate:files": "tsx scripts/db/migrate-files-to-sqlite.ts",
-    "db:sync": "tsx scripts/db/sync-from-blockchain.ts"
+    "db:sync": "tsx scripts/db/sync-from-blockchain.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@noosphere/agent-core": "file:../noosphere-sdk/packages/agent-core",
@@ -30,23 +26,31 @@
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.0",
     "ethers": "^6.13.0",
+    "express": "^5.2.1",
     "next": "15.5.9",
     "postcss": "^8.5.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "socket.io": "^4.8.3",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/supertest": "^6.0.3",
     "eslint": "^9.0.0",
     "eslint-config-next": "15.1.1",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.16"
   }
 }

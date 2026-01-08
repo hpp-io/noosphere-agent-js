@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUnits } from 'ethers';
+import { apiFetch } from '../../lib/api';
 
 type EventStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped' | 'expired';
 
@@ -64,7 +65,7 @@ export default function HistoryPage() {
           url += `&status=${statusFilter}`;
         }
 
-        const res = await fetch(url);
+        const res = await apiFetch(url);
         if (!res.ok) {
           const errorData = await res.json();
           throw new Error(errorData.details || 'Failed to fetch history');

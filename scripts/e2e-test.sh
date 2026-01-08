@@ -23,6 +23,7 @@ ANVIL_PORT=8545
 ANVIL_RPC="http://127.0.0.1:$ANVIL_PORT"
 ANVIL_PID_FILE="/tmp/anvil-e2e.pid"
 AGENT_PID_FILE="/tmp/agent-e2e.pid"
+E2E_DATA_DIR=".noosphere-e2e"  # Isolated data directory for E2E tests
 
 # Anvil default accounts
 DEPLOYER_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -85,18 +86,23 @@ function cleanup() {
         rm -f "$AGENT_PID_FILE"
     fi
 
-    # Restore original config.json if backup exists
-    if [ -f "config.json.backup-e2e" ]; then
-        mv config.json.backup-e2e config.json
+    # Restore original config.json if backup exists (use absolute paths)
+    if [ -f "$AGENT_ROOT/config.json.backup-e2e" ]; then
+        # Remove symlink first if it exists
+        [ -L "$AGENT_ROOT/config.json" ] && rm -f "$AGENT_ROOT/config.json"
+        mv "$AGENT_ROOT/config.json.backup-e2e" "$AGENT_ROOT/config.json"
         log_info "Restored original config.json"
-    elif [ -L "config.json" ]; then
-        # Remove symlink if it exists
-        rm -f config.json
+    elif [ -L "$AGENT_ROOT/config.json" ]; then
+        # Remove symlink if it exists (no backup to restore)
+        rm -f "$AGENT_ROOT/config.json"
         log_info "Removed e2e config symlink"
     fi
 
-    # Remove e2e keystore
-    rm -f .noosphere/keystore-e2e.json
+    # Remove isolated E2E data directory (does NOT affect production .noosphere/)
+    if [ -d "$AGENT_ROOT/$E2E_DATA_DIR" ]; then
+        rm -rf "$AGENT_ROOT/$E2E_DATA_DIR"
+        log_info "Removed E2E data directory ($E2E_DATA_DIR)"
+    fi
 
     log_info "Cleanup complete"
 }
@@ -267,10 +273,11 @@ log_step "Step 5: Configuring Agent"
 
 cd "$AGENT_ROOT"
 
-# Create .noosphere directory
-mkdir -p .noosphere
+# Create isolated E2E data directory (production .noosphere/ is NOT touched)
+log_info "Creating isolated E2E data directory: $E2E_DATA_DIR"
+mkdir -p "$E2E_DATA_DIR"
 
-# Create encrypted keystore using Node.js (separate e2e keystore)
+# Create encrypted keystore using Node.js in the isolated E2E directory
 log_info "Creating encrypted e2e keystore (this may take a moment)..."
 node -e "
 const { KeystoreManager } = require('$SDK_ROOT/packages/crypto/dist/KeystoreManager.js');
@@ -278,7 +285,7 @@ const { ethers } = require('ethers');
 
 async function createKeystore() {
   const provider = new ethers.JsonRpcProvider('$ANVIL_RPC');
-  const keystorePath = './.noosphere/keystore-e2e.json';
+  const keystorePath = './$E2E_DATA_DIR/keystore.json';
   const password = 'test123';
   const privateKey = '$AGENT_PRIVATE_KEY';
 
@@ -323,10 +330,13 @@ fi
 
 log_info "Created agent wallet: $AGENT_WALLET"
 
-# Backup existing config.json if it exists
-if [ -f "config.json" ]; then
+# Backup existing config.json if it exists and is not a symlink
+# Skip backup if backup already exists (avoid overwriting original)
+if [ -f "config.json" ] && [ ! -L "config.json" ] && [ ! -f "config.json.backup-e2e" ]; then
   cp config.json config.json.backup-e2e
   log_info "Backed up existing config.json"
+elif [ -f "config.json.backup-e2e" ]; then
+  log_info "Using existing config.json backup"
 fi
 
 # Create e2e-specific config
@@ -341,7 +351,7 @@ cat > config-e2e.json <<EOF
     "deploymentBlock": 0,
     "processingInterval": 2000,
     "wallet": {
-      "keystorePath": "./.noosphere/keystore-e2e.json",
+      "keystorePath": "./$E2E_DATA_DIR/keystore.json",
       "paymentAddress": "$AGENT_WALLET"
     }
   },
@@ -384,8 +394,8 @@ log_step "Step 7: Starting Agent"
 
 cd "$AGENT_ROOT"
 
-# Start agent in background
-KEYSTORE_PASSWORD=test123 npm run agent > /tmp/agent-e2e.log 2>&1 &
+# Start agent in background with isolated data directory
+NOOSPHERE_DATA_DIR="$E2E_DATA_DIR" KEYSTORE_PASSWORD=test123 npm run agent > /tmp/agent-e2e.log 2>&1 &
 AGENT_PID=$!
 echo $AGENT_PID > "$AGENT_PID_FILE"
 
@@ -506,28 +516,28 @@ STEPS_COMPLETED=0
 
 if grep -q "RequestStarted" /tmp/agent-e2e.log; then
     log_info "✓ Event Detection: PASS"
-    ((STEPS_COMPLETED++))
+    STEPS_COMPLETED=$((STEPS_COMPLETED + 1))
 else
     log_error "✗ Event Detection: FAIL"
 fi
 
 if grep -q "Executing..." /tmp/agent-e2e.log; then
     log_info "✓ Container Execution: PASS"
-    ((STEPS_COMPLETED++))
+    STEPS_COMPLETED=$((STEPS_COMPLETED + 1))
 else
     log_error "✗ Container Execution: FAIL"
 fi
 
 if grep -q "Transaction sent" /tmp/agent-e2e.log; then
     log_info "✓ Transaction Submission: PASS"
-    ((STEPS_COMPLETED++))
+    STEPS_COMPLETED=$((STEPS_COMPLETED + 1))
 else
     log_error "✗ Transaction Submission: FAIL"
 fi
 
 if grep -q "Result delivered successfully" /tmp/agent-e2e.log; then
     log_info "✓ Result Delivery: PASS"
-    ((STEPS_COMPLETED++))
+    STEPS_COMPLETED=$((STEPS_COMPLETED + 1))
 else
     log_error "✗ Result Delivery: FAIL"
 fi

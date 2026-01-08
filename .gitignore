@@ -35,6 +35,7 @@ next-env.d.ts
 
 # noosphere
 .noosphere/
+.noosphere-e2e/
 *.keystore.json
 config.json
 *.db

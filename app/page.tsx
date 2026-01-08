@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../lib/api';
 
 interface AgentStatus {
   agentAddress: string;
@@ -105,7 +106,7 @@ export default function Dashboard() {
         setError(null);
 
         // Fetch agent status
-        const agentRes = await fetch('/api/agent/status');
+        const agentRes = await apiFetch('/api/agent/status');
         if (!agentRes.ok) {
           const errorData = await agentRes.json();
           throw new Error(errorData.details || 'Failed to fetch agent status');
@@ -114,21 +115,21 @@ export default function Dashboard() {
         setAgentStatus(agentData);
 
         // Fetch containers
-        const containersRes = await fetch('/api/containers');
+        const containersRes = await apiFetch('/api/containers');
         if (containersRes.ok) {
           const containersData = await containersRes.json();
           setContainers(containersData);
         }
 
         // Fetch verifiers
-        const verifiersRes = await fetch('/api/verifiers');
+        const verifiersRes = await apiFetch('/api/verifiers');
         if (verifiersRes.ok) {
           const verifiersData = await verifiersRes.json();
           setVerifiers(verifiersData);
         }
 
         // Fetch scheduler status
-        const schedulerRes = await fetch('/api/scheduler');
+        const schedulerRes = await apiFetch('/api/scheduler');
         if (schedulerRes.ok) {
           const schedulerData = await schedulerRes.json();
           setScheduler(schedulerData);

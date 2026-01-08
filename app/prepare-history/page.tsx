@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch } from '../../lib/api';
 
 interface PrepareTransaction {
   id: number;
@@ -56,7 +57,7 @@ export default function PrepareHistoryPage() {
           url += `&subscriptionId=${subscriptionFilter}`;
         }
 
-        const res = await fetch(url);
+        const res = await apiFetch(url);
         if (!res.ok) {
           const errorData = await res.json();
           throw new Error(errorData.details || 'Failed to fetch prepare history');

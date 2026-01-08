@@ -5,6 +5,7 @@
  * 1. RequestStarted events - creates pending entries
  * 2. ComputeDelivered events - updates to completed status
  * 3. Expired detection - marks old pending requests as expired
+ * 4. PrepareTransactions - syncs agent's prepare transactions
  *
  * Usage:
  *   tsx scripts/db/sync-from-blockchain.ts              # Sync from last DB checkpoint
@@ -202,6 +203,8 @@ async function main() {
         continue;
       }
 
+      deliveriesUpdated++;
+
       if (!args.dryRun) {
         // Get transaction receipt for gas info
         const receipt = await provider.getTransactionReceipt(txHash);
@@ -220,7 +223,6 @@ async function main() {
           existingEvent.output || ''
         );
 
-        deliveriesUpdated++;
         console.log(`    ✓ Completed: ${requestId.slice(0, 16)}... (tx: ${txHash.slice(0, 12)}...)`);
       }
     }
@@ -260,13 +262,112 @@ async function main() {
     console.log(`\n  ✓ Marked ${expiredCount} requests as expired\n`);
   }
 
+  // ==================== Phase 4: Sync Prepare Transactions ====================
+  console.log('📥 Phase 4: Syncing PrepareTransactions...\n');
+
+  // Get agent address from keystore
+  let agentAddress = '';
+  try {
+    const keystorePath = config.chain.wallet.keystorePath;
+    const keystoreData = JSON.parse(fs.readFileSync(path.join(process.cwd(), keystorePath), 'utf-8'));
+    agentAddress = keystoreData.eoa?.address?.toLowerCase() || '';
+  } catch (error) {
+    console.log('  ⚠️  Could not read agent address from keystore, skipping prepare sync\n');
+  }
+
+  let prepareOnChain = 0;
+  let prepareSynced = 0;
+  let prepareAlreadyExists = 0;
+
+  // prepareNextInterval(uint64,uint32,address) function selector
+  const PREPARE_NEXT_INTERVAL_SELECTOR = '0xf5e5a31a';
+  const coordinatorAddressLower = config.chain.coordinatorAddress.toLowerCase();
+
+  if (agentAddress) {
+    console.log(`  Agent address: ${agentAddress}`);
+    console.log(`  Coordinator: ${coordinatorAddressLower}\n`);
+
+    // Pre-load existing prepare transaction hashes for efficiency
+    const existingPrepares = new Set<string>();
+    const allPrepares = db.getPrepareTransactions(10000, 0);
+    allPrepares.data.forEach((p: any) => existingPrepares.add(p.tx_hash));
+
+    // Find RequestStarted events where the transaction is prepareNextInterval to Coordinator
+    for (let start = fromBlock; start <= currentBlock; start += chunkSize) {
+      const end = Math.min(start + chunkSize - 1, currentBlock);
+
+      const events = await coordinator.queryFilter(
+        coordinator.filters.RequestStarted(),
+        start,
+        end
+      );
+
+      if (events.length === 0) continue;
+
+      for (const event of events) {
+        const txHash = event.transactionHash;
+
+        // Get transaction to check if it's a direct prepareNextInterval call to Coordinator
+        const tx = await provider.getTransaction(txHash);
+        if (!tx) continue;
+
+        // Must be sent TO the Coordinator contract
+        if (tx.to?.toLowerCase() !== coordinatorAddressLower) {
+          continue;
+        }
+
+        // Must be prepareNextInterval function call
+        if (!tx.data.startsWith(PREPARE_NEXT_INTERVAL_SELECTOR)) {
+          continue;
+        }
+
+        prepareOnChain++;
+
+        // Check if already in prepare_transactions
+        if (existingPrepares.has(txHash)) {
+          prepareAlreadyExists++;
+          continue;
+        }
+
+        prepareSynced++;
+
+        if (!args.dryRun) {
+          // Get transaction receipt for gas info
+          const receipt = await provider.getTransactionReceipt(txHash);
+          const gasUsed = receipt?.gasUsed?.toString() || '0';
+          const gasPrice = (receipt as any)?.effectiveGasPrice?.toString() || receipt?.gasPrice?.toString() || '0';
+          const gasCost = (BigInt(gasUsed) * BigInt(gasPrice)).toString();
+
+          const eventLog = event as any;
+          const commitment = eventLog.args.commitment;
+
+          db.savePrepareTransaction({
+            tx_hash: txHash,
+            block_number: event.blockNumber || 0,
+            subscription_id: Number(eventLog.args.subscriptionId),
+            interval: Number(commitment.interval),
+            gas_used: gasUsed,
+            gas_price: gasPrice,
+            gas_cost: gasCost,
+            status: 'success',
+          });
+
+          console.log(`    ✓ Prepare: Sub ${eventLog.args.subscriptionId}, Interval ${commitment.interval} (tx: ${txHash.slice(0, 12)}...)`);
+        }
+      }
+    }
+  }
+
+  console.log(`\n  ✓ PrepareTransactions: ${prepareOnChain} from agent, ${prepareSynced} synced, ${prepareAlreadyExists} already exist\n`);
+
   // ==================== Summary ====================
   console.log('='.repeat(50));
   console.log('📊 Sync Summary');
   console.log('='.repeat(50));
-  console.log(`  RequestStarted:    ${requestsOnChain} on-chain, ${requestsSynced} synced`);
-  console.log(`  ComputeDelivered:  ${deliveriesOnChain} on-chain, ${deliveriesUpdated} updated`);
-  console.log(`  Expired:           ${expiredCount} marked`);
+  console.log(`  RequestStarted:      ${requestsOnChain} on-chain, ${requestsSynced} synced`);
+  console.log(`  ComputeDelivered:    ${deliveriesOnChain} on-chain, ${deliveriesUpdated} updated`);
+  console.log(`  Expired:             ${expiredCount} marked`);
+  console.log(`  PrepareTransactions: ${prepareOnChain} from agent, ${prepareSynced} synced`);
   console.log('='.repeat(50));
 
   if (args.dryRun) {

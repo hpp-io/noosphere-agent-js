@@ -12,23 +12,33 @@ A production-ready Noosphere agent with built-in web dashboard for monitoring an
 - 📊 **Web Dashboard** - Real-time monitoring of agent status and earnings
 - 💰 **Computing History** - Track all processed requests, fees, and profitability
 - 🔐 **Verifier Support** - Integrated proof generation services
+- 🗄️ **SQLite Database** - Persistent local storage for events and history
+- 👥 **Multi-Agent Support** - Run multiple agents from a single instance
 
 ## Architecture
 
 ```
 noosphere-agent-js/
-├── agent/                  # TypeScript agent (development)
-│   └── index.ts
-├── run-agent.js           # Production agent entry point
-├── app/                   # Next.js dashboard
+├── src/                    # Express server + Agent
+│   ├── app.ts             # Main entry point (Express + WebSocket)
+│   └── services/          # Agent services
+│       ├── agent-manager.ts    # Multi-agent management
+│       └── agent-instance.ts   # Single agent instance
+├── app/                   # Next.js dashboard (frontend only)
 │   ├── page.tsx          # Main dashboard
 │   ├── history/          # Computing history page
-│   └── api/              # API routes
-├── lib/                   # Shared configuration
-│   └── config.ts         # Config loader
+│   └── prepare-history/  # Prepare transaction history
+├── lib/                   # Shared utilities
+│   ├── config.ts         # Config loader
+│   ├── db.ts             # SQLite database
+│   └── logger.ts         # Logging utility
 ├── scripts/              # Utility scripts
 │   ├── init-keystore.ts  # Keystore initialization
-│   └── send-test-request.ts
+│   ├── send-request.ts   # Test request sender
+│   └── db/               # Database utilities
+├── tests/                # Test suites
+│   ├── api.test.ts       # API endpoint tests
+│   └── multi-agent.test.ts # Multi-agent tests
 └── config.json           # Main configuration file
 ```
 
@@ -122,7 +132,7 @@ KEYSTORE_PASSWORD=your-secure-password-here
 Create your agent keystore with your private key:
 
 ```bash
-npm run init:keystore
+npm run init
 ```
 
 This will:
@@ -161,10 +171,15 @@ You need to fund two wallets:
 ### 5. Run the Agent
 
 ```bash
-# Start the agent
+# Start the agent (includes Express API server on port 4000)
 npm run agent
+```
 
-# In a separate terminal, start the web dashboard
+The agent runs an Express server with REST API and WebSocket support on `http://localhost:4000`.
+
+For the Next.js dashboard (optional):
+```bash
+# In a separate terminal
 npm run dev
 ```
 
@@ -341,17 +356,45 @@ docker logs noosphere-noosphere-hello-world
 docker logs noosphere-proof-service-immediate-finalize-verifier
 ```
 
+## Multi-Agent Configuration
+
+For running multiple agents, create an `agents.json` file:
+
+```json
+{
+  "agents": [
+    {
+      "id": "sepolia-main",
+      "name": "Sepolia Main Agent",
+      "configPath": "./config.json",
+      "keystorePassword": "${KEYSTORE_PASSWORD}",
+      "enabled": true
+    },
+    {
+      "id": "sepolia-backup",
+      "name": "Sepolia Backup Agent",
+      "configPath": "./config-backup.json",
+      "keystorePassword": "${KEYSTORE_PASSWORD_2}",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Environment variables in `keystorePassword` (e.g., `${KEYSTORE_PASSWORD}`) are automatically substituted.
+
+See `agents.json.example` for a complete example.
+
 ## Production Deployment
 
 ### Build for Production
 
 ```bash
-# Build Next.js dashboard
+# Build Next.js dashboard (optional)
 npm run build
 
-# Start agent and dashboard
-npm run agent &
-npm start
+# Start agent (Express server on port 4000)
+npm run agent
 ```
 
 ### Using PM2 (Recommended)
@@ -360,10 +403,10 @@ npm start
 # Install PM2
 npm install -g pm2
 
-# Start agent
-pm2 start run-agent.js --name noosphere-agent
+# Start agent with tsx
+pm2 start "npx tsx src/app.ts" --name noosphere-agent
 
-# Start dashboard
+# Start dashboard (optional)
 pm2 start npm --name noosphere-dashboard -- start
 
 # Save configuration
@@ -387,14 +430,11 @@ RUN npm install --production
 # Copy application
 COPY . .
 
-# Build Next.js
-RUN npm run build
+# Expose API port
+EXPOSE 4000
 
-# Expose dashboard port
-EXPOSE 3000
-
-# Start both agent and dashboard
-CMD ["sh", "-c", "node run-agent.js & npm start"]
+# Start agent
+CMD ["npx", "tsx", "src/app.ts"]
 ```
 
 ## Security Best Practices
@@ -412,19 +452,32 @@ CMD ["sh", "-c", "node run-agent.js & npm start"]
 ### Running in Development Mode
 
 ```bash
-# Run TypeScript agent with auto-reload
-npm run agent:legacy
+# Run agent (Express server with hot reload via tsx)
+npm run agent
 
-# Run Next.js in dev mode
+# Run Next.js dashboard in dev mode
 npm run dev
 ```
 
 ### Testing
 
+#### Unit Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+```
+
 #### Manual Request Test
 
 ```bash
-# Send a single manual test request
+# Send a test request to the agent
 npm run send:request
 
 # View test request in history
@@ -433,22 +486,12 @@ open http://localhost:3000/history
 
 #### Scheduler Service Test
 
-Test the agent's automatic scheduler with interval-based subscriptions:
-
-```bash
-# Create a scheduled subscription (10-minute intervals)
-npm run send:scheduled
-```
-
-This will:
-- Create a subscription with 5 executions at 10-minute intervals
-- Agent's SchedulerService automatically triggers requests every 10 minutes
-- Total test duration: 50 minutes
+Test the agent's automatic scheduler with interval-based subscriptions.
 
 **Monitor the scheduler**:
 1. **Agent logs**: Watch for `"🔄 Starting commitment generation task..."`
 2. **Dashboard**: Check "Active Subscriptions" and "Committed Intervals" at http://localhost:3000
-3. **Computing History**: Requests appear every 10 minutes at http://localhost:3000/history
+3. **Computing History**: Requests appear at scheduled intervals at http://localhost:3000/history
 
 **Note**: Minimum interval is 10 minutes (600 seconds) on testnet.
 
@@ -474,7 +517,23 @@ This will:
 
 ## API Reference
 
-### Agent Status API
+All APIs are served from the Express server on port 4000.
+
+### Health Check
+
+```bash
+GET /api/health
+```
+
+Returns:
+```json
+{
+  "status": "ok",
+  "timestamp": 1704456000000
+}
+```
+
+### Agent Status
 
 ```bash
 GET /api/agent/status
@@ -485,41 +544,100 @@ Returns:
 {
   "agentAddress": "0xAbDaA7Ce...",
   "balance": "0.1234",
-  "paymentWallets": [
-    {
-      "address": "0x13F09...",
-      "balance": "0.5678"
-    }
-  ]
+  "paymentWallets": [{ "address": "0x13F09...", "balance": "0.5678" }],
+  "rpcUrl": "https://sepolia.hpp.io",
+  "routerAddress": "0x31B0...",
+  "coordinatorAddress": "0x5e05..."
 }
 ```
 
-### Computing History API
+### Multi-Agent Management
 
 ```bash
-GET /api/history?limit=10&offset=0
+GET /api/agents              # List all agents
+GET /api/agents/:id          # Get specific agent status
+POST /api/agents             # Create new agent
+DELETE /api/agents/:id       # Stop and remove agent
+```
+
+### Event Statistics
+
+```bash
+GET /api/stats
 ```
 
 Returns:
 ```json
 {
+  "total": 150,
+  "completed": 140,
+  "pending": 8,
+  "failed": 2
+}
+```
+
+### Scheduler Status
+
+```bash
+GET /api/scheduler
+```
+
+Returns:
+```json
+{
+  "enabled": true,
+  "cronIntervalMs": 60000,
+  "syncPeriodMs": 3000,
+  "scheduler": { "tracking": 5, "active": 3, "pendingTxs": 1 },
+  "events": { "total": 150, "completed": 140 }
+}
+```
+
+### Computing History
+
+```bash
+GET /api/history?limit=10&offset=0&status=completed&subscription=1
+```
+
+Returns:
+```json
+{
+  "agentAddress": "0xAbDaA7Ce...",
+  "paymentWallet": "0x13F09...",
+  "total": 100,
+  "limit": 10,
+  "offset": 0,
   "history": [
     {
       "requestId": "0x123...",
-      "subscriptionId": "1",
+      "subscriptionId": 1,
       "containerId": "noosphere-hello-world",
-      "timestamp": "2024-01-05T12:00:00Z",
-      "txHash": "0xabc...",
+      "timestamp": 1704456000,
+      "transactionHash": "0xabc...",
       "blockNumber": 12345,
       "feeEarned": "1000000000",
       "gasFee": "200000",
+      "status": "completed",
       "input": "0x...",
-      "output": "0x...",
-      "isPenalty": false
+      "output": "0x..."
     }
-  ],
-  "total": 100
+  ]
 }
+```
+
+### Prepare Transaction History
+
+```bash
+GET /api/prepare-history?limit=10&subscriptionId=1
+```
+
+Returns gas costs for prepare transactions.
+
+### Containers & Verifiers
+
+```bash
+GET /api/containers          # List available containers
+GET /api/verifiers           # List available verifiers
 ```
 
 ## License

@@ -107,8 +107,9 @@ export class AgentDatabase {
   private static instance: AgentDatabase;
 
   private constructor(dbPath?: string) {
-    // Default path: .noosphere/agent.db
-    const defaultPath = path.join(process.cwd(), '.noosphere', 'agent.db');
+    // Support NOOSPHERE_DATA_DIR environment variable for E2E testing isolation
+    const dataDir = process.env.NOOSPHERE_DATA_DIR || '.noosphere';
+    const defaultPath = path.join(process.cwd(), dataDir, 'agent.db');
     const finalPath = dbPath || defaultPath;
 
     // Ensure directory exists
