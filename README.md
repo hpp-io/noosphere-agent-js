@@ -421,13 +421,36 @@ npm run dev
 
 ### Testing
 
+#### Manual Request Test
+
 ```bash
-# Send a test request
+# Send a single manual test request
 npm run send:request
 
 # View test request in history
 open http://localhost:3000/history
 ```
+
+#### Scheduler Service Test
+
+Test the agent's automatic scheduler with interval-based subscriptions:
+
+```bash
+# Create a scheduled subscription (10-minute intervals)
+npm run send:scheduled
+```
+
+This will:
+- Create a subscription with 5 executions at 10-minute intervals
+- Agent's SchedulerService automatically triggers requests every 10 minutes
+- Total test duration: 50 minutes
+
+**Monitor the scheduler**:
+1. **Agent logs**: Watch for `"🔄 Starting commitment generation task..."`
+2. **Dashboard**: Check "Active Subscriptions" and "Committed Intervals" at http://localhost:3000
+3. **Computing History**: Requests appear every 10 minutes at http://localhost:3000/history
+
+**Note**: Minimum interval is 10 minutes (600 seconds) on testnet.
 
 ### Adding Custom Containers
 

@@ -25,19 +25,19 @@ export async function GET() {
 
     // Get EOA balance
     const balance = await provider.getBalance(eoaAddress);
-    const balanceInEth = Number(balance) / 1e18;
+    const balanceInGwei = Number(balance) / 1e9;
 
     // Get payment wallet address and balance from config
     const paymentWalletAddress = config.chain.wallet.paymentAddress;
     const paymentWalletBalance = await provider.getBalance(paymentWalletAddress);
-    const paymentWalletBalanceInEth = Number(paymentWalletBalance) / 1e18;
+    const paymentWalletBalanceInGwei = Number(paymentWalletBalance) / 1e9;
 
     return NextResponse.json({
       agentAddress: eoaAddress,
-      balance: balanceInEth.toFixed(4),
+      balance: balanceInGwei.toFixed(4),
       paymentWallets: [{
         address: paymentWalletAddress,
-        balance: paymentWalletBalanceInEth.toFixed(6),
+        balance: paymentWalletBalanceInGwei.toFixed(4),
       }],
       rpcUrl: config.chain.rpcUrl,
       routerAddress: config.chain.routerAddress,

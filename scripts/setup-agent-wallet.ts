@@ -100,6 +100,23 @@ async function main() {
   console.log(`  ✓ Payment Wallet created: ${walletAddress}`);
   console.log(`  ✓ Transaction: ${txHash}\n`);
 
+  // Step 2.5: Approve agent EOA to spend from payment wallet
+  console.log('📝 Step 2.5: Approving agent EOA as spender...');
+  const walletAbi = [
+    "function approve(address spender, address token, uint256 amount) external"
+  ];
+  const paymentWalletContract = new ethers.Contract(walletAddress, walletAbi, wallet);
+
+  // Approve agent EOA for native ETH (ZeroAddress) with max allowance
+  const approveTx = await paymentWalletContract.approve(
+    wallet.address, // spender = agent EOA
+    ethers.ZeroAddress, // token = native ETH
+    ethers.MaxUint256 // amount = unlimited
+  );
+  await approveTx.wait();
+  console.log(`  ✓ Approved agent EOA as spender: ${wallet.address}`);
+  console.log(`  ✓ Transaction: ${approveTx.hash}\n`);
+
   // Step 3: Update config.json with payment wallet address
   console.log('📝 Step 3: Updating config.json...');
   configData.chain.wallet.paymentAddress = walletAddress;

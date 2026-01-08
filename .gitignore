@@ -37,10 +37,35 @@ next-env.d.ts
 .noosphere/
 *.keystore.json
 config.json
+*.db
+*.db-shm
+*.db-wal
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
 
 # test files
 test-*.js
+*.test.log
+*-test.log
+
+# logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# temp files
+tmp/
+temp/
+*.tmp

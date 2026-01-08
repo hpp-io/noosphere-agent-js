@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUnits } from 'ethers';
 
+type EventStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped' | 'expired';
+
 interface HistoryEntry {
   requestId: string;
   subscriptionId: number;
@@ -18,6 +20,7 @@ interface HistoryEntry {
   gasFee: string;
   feeEarned: string;
   isPenalty: boolean;
+  status: EventStatus;
   input: string;
   output: string;
 }
@@ -38,6 +41,17 @@ export default function HistoryPage() {
   const [offset, setOffset] = useState(0);
   const [limit] = useState(20);
   const [selectedEntry, setSelectedEntry] = useState<HistoryEntry | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const statusOptions = [
+    { value: 'all', label: 'All' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'processing', label: 'Processing' },
+    { value: 'failed', label: 'Failed' },
+    { value: 'skipped', label: 'Skipped' },
+    { value: 'expired', label: 'Expired' },
+  ];
 
   useEffect(() => {
     async function fetchHistory() {
@@ -45,7 +59,12 @@ export default function HistoryPage() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/history?limit=${limit}&offset=${offset}`);
+        let url = `/api/history?limit=${limit}&offset=${offset}`;
+        if (statusFilter !== 'all') {
+          url += `&status=${statusFilter}`;
+        }
+
+        const res = await fetch(url);
         if (!res.ok) {
           const errorData = await res.json();
           throw new Error(errorData.details || 'Failed to fetch history');
@@ -61,7 +80,12 @@ export default function HistoryPage() {
     }
 
     fetchHistory();
-  }, [offset, limit]);
+  }, [offset, limit, statusFilter]);
+
+  // Reset offset when filter changes
+  useEffect(() => {
+    setOffset(0);
+  }, [statusFilter]);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
@@ -82,24 +106,28 @@ export default function HistoryPage() {
 
   const formatWei = (weiString: string): { value: string; unit: string } => {
     try {
-      const wei = BigInt(weiString);
+      const wei = BigInt(weiString || '0');
 
-      // If >= 0.001 ETH, show in ETH
-      if (wei >= BigInt('1000000000000000')) {
-        const eth = formatUnits(weiString, 18);
-        return { value: Number(eth).toFixed(6), unit: 'ETH' };
+      if (wei === 0n) {
+        return { value: '0', unit: 'gwei' };
       }
 
-      // If >= 0.001 gwei, show in gwei (includes sub-gwei amounts)
-      if (wei >= BigInt('1000000')) {
+      // Use gwei as default, only use wei for very small amounts
+      const absWei = wei < 0n ? -wei : wei;
+
+      if (absWei >= BigInt('100')) {
+        // >= 100 wei (0.0000001 gwei) -> show in gwei with more precision for small values
         const gwei = formatUnits(weiString, 9);
-        return { value: Number(gwei).toFixed(4), unit: 'gwei' };
+        const gweiNum = Number(gwei);
+        // Use more decimal places for smaller values
+        const decimals = gweiNum < 0.0001 ? 8 : gweiNum < 0.01 ? 6 : 4;
+        return { value: gweiNum.toFixed(decimals), unit: 'gwei' };
+      } else {
+        // < 100 wei -> show in wei
+        return { value: wei.toString(), unit: 'wei' };
       }
-
-      // Otherwise show in wei
-      return { value: weiString, unit: 'wei' };
     } catch (e) {
-      return { value: '0', unit: 'ETH' };
+      return { value: '0', unit: 'gwei' };
     }
   };
 
@@ -176,12 +204,39 @@ export default function HistoryPage() {
                 </div>
               )}
             </div>
-            {data && (
-              <div className="text-right">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Computations</p>
-                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{data.total}</p>
+            <div className="flex items-center gap-4">
+              {/* Prepare History Link */}
+              <Link
+                href="/prepare-history"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+              >
+                Prepare History
+              </Link>
+              {/* Status Filter */}
+              <div>
+                <label htmlFor="status-filter" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                  Status
+                </label>
+                <select
+                  id="status-filter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="block w-40 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
+              {data && (
+                <div className="text-right">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total</p>
+                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{data.total}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -202,6 +257,9 @@ export default function HistoryPage() {
                         Subscription
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Container
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -217,12 +275,12 @@ export default function HistoryPage() {
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {data.history.map((entry) => {
-                      const feeEarned = formatWei(entry.feeEarned);
-                      const gasFee = formatWei(entry.gasFee);
+                      const feeEarned = formatWei(entry.feeEarned || '0');
+                      const gasFee = formatWei(entry.gasFee || '0');
 
                       // Calculate net profit in wei for accurate comparison
-                      const netProfitWei = BigInt(entry.feeEarned) - BigInt(entry.gasFee);
-                      const netProfitGwei = Number(formatUnits(netProfitWei, 9)).toFixed(4);
+                      const netProfitWei = BigInt(entry.feeEarned || '0') - BigInt(entry.gasFee || '0');
+                      const netProfit = formatWei(netProfitWei.toString());
 
                       return (
                         <tr
@@ -245,6 +303,19 @@ export default function HistoryPage() {
                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                               Interval {entry.interval}
                             </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              entry.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                              entry.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
+                              entry.status === 'processing' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
+                              entry.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' :
+                              entry.status === 'skipped' ? 'bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-300' :
+                              entry.status === 'expired' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300' :
+                              'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                            }`}>
+                              {entry.status}
+                            </span>
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm font-mono text-gray-900 dark:text-white">
@@ -275,7 +346,7 @@ export default function HistoryPage() {
                                 ? 'text-green-600 dark:text-green-400'
                                 : 'text-red-600 dark:text-red-400'
                             }`}>
-                              {netProfitWei >= 0n ? '+' : ''}{netProfitGwei} gwei
+                              {netProfitWei >= 0n ? '+' : ''}{netProfit.value} {netProfit.unit}
                             </div>
                           </td>
                         </tr>
@@ -384,29 +455,31 @@ export default function HistoryPage() {
                     <p className={`mt-1 text-lg font-semibold ${
                       selectedEntry.isPenalty ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
                     }`}>
-                      {selectedEntry.isPenalty ? '-' : '+'}{formatWei(selectedEntry.feeEarned).value} {formatWei(selectedEntry.feeEarned).unit}
+                      {selectedEntry.isPenalty ? '-' : '+'}{formatWei(selectedEntry.feeEarned || '0').value} {formatWei(selectedEntry.feeEarned || '0').unit}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{selectedEntry.isPenalty ? 'Penalty' : 'Earned'}</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400">Gas Fee</label>
                     <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                      {formatWei(selectedEntry.gasFee).value} {formatWei(selectedEntry.gasFee).unit}
+                      {formatWei(selectedEntry.gasFee || '0').value} {formatWei(selectedEntry.gasFee || '0').unit}
                     </p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400">Net Profit</label>
-                    <p className={`mt-1 text-lg font-semibold ${
-                      (BigInt(selectedEntry.feeEarned) - BigInt(selectedEntry.gasFee)) >= 0n
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      {formatWei((BigInt(selectedEntry.feeEarned) - BigInt(selectedEntry.gasFee)).toString()).unit === 'wei' &&
-                      (BigInt(selectedEntry.feeEarned) - BigInt(selectedEntry.gasFee)) !== 0n
-                          ? `${formatUnits((BigInt(selectedEntry.feeEarned) - BigInt(selectedEntry.gasFee)).toString(), 9)} gwei`
-                          : ''}
-
-                    </p>
+                    {(() => {
+                      const netProfitWei = BigInt(selectedEntry.feeEarned || '0') - BigInt(selectedEntry.gasFee || '0');
+                      const netProfit = formatWei(netProfitWei.toString());
+                      return (
+                        <p className={`mt-1 text-lg font-semibold ${
+                          netProfitWei >= 0n
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {netProfitWei >= 0n ? '+' : ''}{netProfit.value} {netProfit.unit}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

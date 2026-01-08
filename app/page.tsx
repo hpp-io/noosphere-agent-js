@@ -36,11 +36,14 @@ interface Container {
 interface Verifier {
   id: string;
   name: string;
-  type: string;
-  endpoint?: string;
+  verifierAddress?: string;
   verified?: boolean;
-  supportedContainers?: string[];
   description?: string;
+  requiresProof?: boolean;
+  proofService?: {
+    imageName?: string;
+    port?: string;
+  };
 }
 
 interface ContainersResponse {
@@ -61,6 +64,21 @@ interface SchedulerStatus {
   enabled: boolean;
   cronIntervalMs: number;
   syncPeriodMs: number;
+  scheduler: {
+    tracking: number;
+    active: number;
+    pendingTxs: number;
+  };
+  events: {
+    total: number;
+    completed: number;
+    failed: number;
+    skipped: number;
+    expired: number;
+    pending: number;
+    processing: number;
+  };
+  // Legacy fields for backward compatibility
   stats: {
     totalSubscriptions: number;
     activeSubscriptions: number;
@@ -167,7 +185,13 @@ export default function Dashboard() {
                 href="/history"
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
               >
-                View Computing History
+                Computing History
+              </a>
+              <a
+                href="/prepare-history"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+              >
+                Prepare History
               </a>
             </nav>
           </div>
@@ -179,35 +203,29 @@ export default function Dashboard() {
         {scheduler && (
           <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white flex items-center">
-              <span className="mr-2">🕐</span> Scheduler Status
+              <span className="mr-2">🕐</span> Scheduler (Scheduled Subscriptions)
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Subscriptions</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Tracking</p>
                 <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {scheduler.stats.totalSubscriptions}
+                  {scheduler.scheduler?.tracking ?? scheduler.stats.totalSubscriptions}
                 </p>
               </div>
               <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Active Subscriptions</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Active</p>
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {scheduler.stats.activeSubscriptions}
-                </p>
-              </div>
-              <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Committed Intervals</p>
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                  {scheduler.stats.committedIntervals}
+                  {scheduler.scheduler?.active ?? scheduler.stats.activeSubscriptions}
                 </p>
               </div>
               <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Pending Txs</p>
                 <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                  {scheduler.stats.pendingTransactions}
+                  {scheduler.scheduler?.pendingTxs ?? scheduler.stats.pendingTransactions}
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-6">
               <div>
                 <p className="text-gray-500 dark:text-gray-400">Commitment Interval</p>
                 <p className="font-medium text-gray-900 dark:text-white">
@@ -225,6 +243,45 @@ export default function Dashboard() {
                 <p className="font-medium text-green-600 dark:text-green-400">
                   {scheduler.enabled ? '● Running' : '○ Stopped'}
                 </p>
+              </div>
+            </div>
+
+            {/* Events Section */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+              <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white flex items-center">
+                <span className="mr-2">📊</span> Events (All Requests)
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded text-center">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">
+                    {scheduler.events?.total ?? 0}
+                  </p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded text-center">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Completed</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                    {scheduler.events?.completed ?? 0}
+                  </p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded text-center">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Failed</p>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                    {scheduler.events?.failed ?? 0}
+                  </p>
+                </div>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded text-center">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Skipped</p>
+                  <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
+                    {scheduler.events?.skipped ?? 0}
+                  </p>
+                </div>
+                <div className="bg-gray-100 dark:bg-gray-600/50 p-3 rounded text-center">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Expired</p>
+                  <p className="text-xl font-bold text-gray-600 dark:text-gray-300">
+                    {scheduler.events?.expired ?? 0}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -246,7 +303,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Balance</p>
                 <p className="text-lg font-semibold mt-1 text-gray-900 dark:text-white">
-                  {agentStatus.balance} ETH
+                  {agentStatus.balance} gwei
                 </p>
               </div>
               <div>
@@ -271,7 +328,7 @@ export default function Dashboard() {
                           {wallet.address}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Balance: {wallet.balance} ETH
+                          Balance: {wallet.balance} gwei
                         </p>
                       </div>
                     ))}
@@ -418,76 +475,50 @@ export default function Dashboard() {
             )}
           </div>
           {verifiers && verifiers.verifiers.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                      Type
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                      Endpoint
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                      Supported Containers
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {verifiers.verifiers.map((verifier) => (
-                    <tr key={verifier.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {verifier.name}
-                          </p>
-                          {verifier.description && (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">
-                              {verifier.description}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded">
-                          {verifier.type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-mono text-sm text-gray-900 dark:text-white">
-                          {verifier.endpoint || '-'}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {verifiers.verifiers.map((verifier) => (
+                <div
+                  key={verifier.id}
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        {verifier.name}
+                      </h3>
+                      {verifier.description && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          {verifier.description}
                         </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        {verifier.supportedContainers && verifier.supportedContainers.length > 0 ? (
-                          <span className="text-sm text-gray-900 dark:text-white">
-                            {verifier.supportedContainers.length} containers
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500">All</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                          <span className="text-sm text-gray-900 dark:text-white">Active</span>
-                          {verifier.verified && (
-                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-1 rounded">
-                              Verified
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                      {verifier.verified && (
+                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-1 rounded">
+                          Verified
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Contract: </span>
+                      <span className="font-mono text-gray-900 dark:text-white break-all">
+                        {verifier.verifierAddress || '-'}
+                      </span>
+                    </div>
+                    {verifier.proofService?.imageName && (
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Image: </span>
+                        <span className="font-mono text-gray-900 dark:text-white break-all">
+                          {verifier.proofService.imageName}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="text-gray-500 dark:text-gray-400 text-center py-8">
