@@ -1,0 +1,85 @@
+# =============================================================================
+# Noosphere Agent - Docker Compose (Production)
+# =============================================================================
+#
+# Production deployment with fixed server paths.
+# All sensitive files are mounted from server directories at runtime.
+#
+# Setup:
+#   1. Create directories:
+#      mkdir -p /data/noosphere/config
+#      mkdir -p /data/noosphere/data
+#
+#   2. Copy config and keystore:
+#      cp docker/config.docker.json /data/noosphere/config/config.json
+#      cp .noosphere/keystore.json /data/noosphere/data/keystore.json
+#      touch /data/noosphere/data/registry.json
+#
+#   3. Set environment variables in /data/noosphere/config/.env:
+#      KEYSTORE_PASSWORD=your-password
+#      PAYMENT_ADDRESS=0x...
+#      LLMROUTER_API_KEY=...
+#      LLMROUTER_BASE_URL=...
+#      GEMINI_API_KEY=...
+#      PROOF_SERVICE_PRIVATE_KEY=...
+#
+# Usage:
+#   docker compose -f docker/docker-compose.production.yml up -d
+#
+# =============================================================================
+
+services:
+  agent:
+    image: noosphere-agent:latest
+    container_name: noosphere-agent
+    restart: unless-stopped
+    stop_grace_period: 30s  # Allow more time for graceful shutdown (DB checkpoint)
+
+    # Environment variables from .env file or host environment
+    env_file:
+      - /data/noosphere/config/.env
+
+    environment:
+      - NODE_ENV=production
+      - NOOSPHERE_DATA_DIR=/app/.noosphere
+      - DASHBOARD_ENABLED=true
+      - DOCKER_NETWORK=docker_default
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "3000:3000"  # Next.js Dashboard
+      - "4000:4000"  # Express API
+
+    volumes:
+      # Configuration (read-only)
+      - /data/noosphere/config/config.json:/app/config.json:ro
+
+      # Docker socket for DinD
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, keystore.json, registry.json)
+      # Mounting entire directory ensures SQLite WAL files are persisted
+      - /data/noosphere/data:/app/.noosphere
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    # Optional: Resource limits for production
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M

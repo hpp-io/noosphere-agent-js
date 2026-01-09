@@ -109,7 +109,10 @@ export class AgentDatabase {
   private constructor(dbPath?: string) {
     // Support NOOSPHERE_DATA_DIR environment variable for E2E testing isolation
     const dataDir = process.env.NOOSPHERE_DATA_DIR || '.noosphere';
-    const defaultPath = path.join(process.cwd(), dataDir, 'agent.db');
+    // If dataDir is absolute path, use it directly; otherwise join with cwd
+    const defaultPath = path.isAbsolute(dataDir)
+      ? path.join(dataDir, 'agent.db')
+      : path.join(process.cwd(), dataDir, 'agent.db');
     const finalPath = dbPath || defaultPath;
 
     // Ensure directory exists
@@ -256,13 +259,24 @@ export class AgentDatabase {
   /**
    * Update event status to failed
    * Note: Does NOT overwrite 'completed' status to prevent race conditions
+   * @param requestId - Request ID
+   * @param error - Error message
+   * @param txHash - Optional transaction hash (if tx was sent before failure)
    */
-  public updateEventToFailed(requestId: string, error: string): void {
-    this.db.prepare(`
-      UPDATE events
-      SET status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE request_id = ? AND status NOT IN ('completed')
-    `).run(error, requestId);
+  public updateEventToFailed(requestId: string, error: string, txHash?: string): void {
+    if (txHash) {
+      this.db.prepare(`
+        UPDATE events
+        SET status = 'failed', error_message = ?, tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE request_id = ? AND status NOT IN ('completed')
+      `).run(error, txHash, requestId);
+    } else {
+      this.db.prepare(`
+        UPDATE events
+        SET status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE request_id = ? AND status NOT IN ('completed')
+      `).run(error, requestId);
+    }
   }
 
   /**
@@ -910,9 +924,19 @@ export class AgentDatabase {
   }
 
   /**
+   * Checkpoint WAL to main database file
+   * This ensures all writes are persisted before shutdown
+   */
+  public checkpoint(): void {
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+  }
+
+  /**
    * Close database connection
+   * Checkpoints WAL before closing to ensure all data is persisted
    */
   public close(): void {
+    this.checkpoint();
     this.db.close();
   }
 }

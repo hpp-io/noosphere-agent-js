@@ -41,6 +41,7 @@ export interface ChainConfig {
 
 export interface ContainerConfig {
   id: string;
+  name?: string;
   image: string;
   port: string;
   env?: Record<string, string>;

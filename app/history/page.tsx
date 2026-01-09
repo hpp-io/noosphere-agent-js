@@ -22,6 +22,7 @@ interface HistoryEntry {
   feeEarned: string;
   isPenalty: boolean;
   status: EventStatus;
+  errorMessage?: string;
   input: string;
   output: string;
 }
@@ -98,11 +99,6 @@ export default function HistoryPage() {
 
   const formatAddress = (address: string) => {
     return address.substring(0, 6) + '...' + address.substring(address.length - 4);
-  };
-
-  const getBlockExplorerUrl = (txHash: string) => {
-    // Customize this based on your network
-    return `https://sepolia.hpp.io/tx/${txHash}`;
   };
 
   const formatWei = (weiString: string): { value: string; unit: string } => {
@@ -520,19 +516,28 @@ export default function HistoryPage() {
                 </div>
               </div>
 
-              {/* Transaction Link */}
+              {/* Error Message (for failed/skipped/expired) */}
+              {selectedEntry.errorMessage && (
+                <div>
+                  <label className="block text-sm font-medium text-red-500 dark:text-red-400 mb-2">Error Message</label>
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded">
+                    <pre className="font-mono text-xs whitespace-pre-wrap break-all text-red-700 dark:text-red-300">
+                      {selectedEntry.errorMessage}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Transaction */}
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <a
-                  href={getBlockExplorerUrl(selectedEntry.transactionHash)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  View Transaction on Explorer
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </a>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Transaction Hash</label>
+                {selectedEntry.transactionHash ? (
+                  <p className="font-mono text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded break-all text-gray-900 dark:text-white">
+                    {selectedEntry.transactionHash}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 italic">No transaction sent</p>
+                )}
               </div>
             </div>
           </div>

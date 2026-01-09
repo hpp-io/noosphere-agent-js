@@ -3,10 +3,40 @@
  *
  * Loads configuration from config.json and merges with environment variables.
  * Secrets (private keys, passwords) are always loaded from .env for security.
+ *
+ * Supports ${ENV_VAR} syntax in config values for environment variable substitution.
  */
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
+
+/**
+ * Recursively substitute ${ENV_VAR} patterns in config values
+ */
+function substituteEnvVars(obj: any): any {
+  if (typeof obj === 'string') {
+    // Replace ${VAR_NAME} with environment variable value
+    return obj.replace(/\$\{([^}]+)\}/g, (match, varName) => {
+      const value = process.env[varName];
+      if (value === undefined) {
+        console.warn(`Warning: Environment variable ${varName} is not set`);
+        return match; // Keep the placeholder if not set
+      }
+      return value;
+    });
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => substituteEnvVars(item));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = substituteEnvVars(value);
+    }
+    return result;
+  }
+  return obj;
+}
 
 export interface AgentConfig {
   chain: {
@@ -78,7 +108,10 @@ export function loadConfig(configPath?: string): RuntimeConfig {
   try {
     // Load config.json
     const configData = readFileSync(path, 'utf-8');
-    const config: AgentConfig = JSON.parse(configData);
+    const rawConfig = JSON.parse(configData);
+
+    // Substitute ${ENV_VAR} patterns in config values
+    const config: AgentConfig = substituteEnvVars(rawConfig);
 
     // Load secrets from environment variables
     const keystorePassword = process.env.KEYSTORE_PASSWORD;

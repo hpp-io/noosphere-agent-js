@@ -5,8 +5,6 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { JsonRpcProvider } from 'ethers';
 import { ethers } from 'ethers';
-import * as fs from 'fs';
-import * as path from 'path';
 import { RegistryManager, KeystoreManager } from '@noosphere/agent-core';
 import { getAgentManager } from './services/agent-manager';
 import { getDatabase } from '../lib/db';
@@ -52,12 +50,11 @@ app.get('/api/agent/status', async (_req, res) => {
     const config = loadConfig();
     const provider = new JsonRpcProvider(config.chain.rpcUrl);
 
-    const keystoreData = fs.readFileSync(config.chain.wallet.keystorePath, 'utf-8');
-    const keystore = await KeystoreManager.importKeystore(
+    const keystore = new KeystoreManager(
       config.chain.wallet.keystorePath,
       config.secrets.keystorePassword,
-      keystoreData,
     );
+    await keystore.load();
     const eoaAddress = keystore.getEOAAddress();
     const balance = await provider.getBalance(eoaAddress);
     const balanceInGwei = Number(balance) / 1e9;
@@ -139,18 +136,38 @@ app.get('/api/scheduler', (_req, res) => {
     const config = loadConfig();
     const db = getDatabase();
 
+    // Get scheduler stats from running agent (live data)
     let schedulerStats = { tracking: 0, active: 0, pendingTxs: 0 };
-    const latestStatus = db.getLatestAgentStatus();
-
-    if (latestStatus?.recorded_at) {
-      const recordedAt = new Date(latestStatus.recorded_at + 'Z').getTime();
-      const isRecent = Date.now() - recordedAt < 120000;
-      if (isRecent) {
-        schedulerStats = {
-          tracking: latestStatus.total_subscriptions || 0,
-          active: latestStatus.active_subscriptions || 0,
-          pendingTxs: latestStatus.pending_transactions || 0,
-        };
+    try {
+      const manager = getAgentManager();
+      const agents = manager.getStatus();
+      if (agents.runningAgents > 0) {
+        const agentId = agents.agents[0]?.id;
+        if (agentId) {
+          const agent = manager.getAgent(agentId);
+          const status = agent?.getStatus();
+          if (status?.scheduler) {
+            schedulerStats = {
+              tracking: status.scheduler.totalSubscriptions || 0,
+              active: status.scheduler.activeSubscriptions || 0,
+              pendingTxs: status.scheduler.pendingTransactions || 0,
+            };
+          }
+        }
+      }
+    } catch {
+      // Fall back to DB if agent manager not available
+      const latestStatus = db.getLatestAgentStatus();
+      if (latestStatus?.recorded_at) {
+        const recordedAt = new Date(latestStatus.recorded_at + 'Z').getTime();
+        const isRecent = Date.now() - recordedAt < 120000;
+        if (isRecent) {
+          schedulerStats = {
+            tracking: latestStatus.total_subscriptions || 0,
+            active: latestStatus.active_subscriptions || 0,
+            pendingTxs: latestStatus.pending_transactions || 0,
+          };
+        }
       }
     }
 
@@ -192,11 +209,12 @@ app.get('/api/containers', async (_req, res) => {
 
     const configContainers = config.containers?.map((c: any) => {
       const tags = ['local', 'compute'];
-      if (c.id.includes('llm')) tags.push('llm', 'ai');
-      if (c.id.includes('hello-world')) tags.push('example', 'demo');
+      const name = c.name || c.id.slice(0, 10);
+      if (name.includes('llm')) tags.push('llm', 'ai');
+      if (name.includes('hello-world')) tags.push('example', 'demo');
       return {
-        id: c.id, name: c.id, imageName: c.image, verified: false,
-        tags, description: `Container: ${c.id}`, requirements: {}, payments: {},
+        id: c.id, name, imageName: c.image, verified: false,
+        tags, description: `Container: ${name}`, requirements: {}, payments: {},
       };
     }) || [];
 
@@ -268,12 +286,11 @@ app.get('/api/history', async (req, res) => {
     let agentAddress = '';
 
     try {
-      const keystoreData = fs.readFileSync(config.chain.wallet.keystorePath, 'utf-8');
-      const keystore = await KeystoreManager.importKeystore(
+      const keystore = new KeystoreManager(
         config.chain.wallet.keystorePath,
         config.secrets.keystorePassword,
-        keystoreData,
       );
+      await keystore.load();
       agentAddress = keystore.getEOAAddress();
     } catch {}
 
@@ -300,6 +317,7 @@ app.get('/api/history', async (req, res) => {
       feeEarned: event.fee_earned,
       isPenalty: event.is_penalty,
       status: event.status,
+      errorMessage: event.error_message,
       input: event.input || '',
       output: event.output || '',
     }));
@@ -441,6 +459,10 @@ async function start() {
     const shutdown = async (signal: string) => {
       logger.info(`${signal} received, shutting down...`);
       await manager.shutdown();
+      // Checkpoint and close database to ensure WAL is flushed
+      const db = getDatabase();
+      db.close();
+      logger.info('Database closed');
       httpServer.close();
       process.exit(0);
     };

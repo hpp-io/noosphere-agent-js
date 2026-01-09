@@ -1,0 +1,73 @@
+# =============================================================================
+# Docker Build Exclusions
+# =============================================================================
+# SECURITY: Sensitive files are excluded and should be mounted at runtime
+# =============================================================================
+
+# Dependencies (rebuilt in Docker)
+node_modules
+npm-debug.log*
+
+# Build outputs (rebuilt in Docker)
+.next
+out
+dist
+build
+
+# =============================================================================
+# SENSITIVE FILES - NEVER include in Docker image
+# =============================================================================
+# These files contain secrets and must be mounted at runtime via volumes
+.env
+.env.*
+!.env.example
+config.json
+config.docker.json
+config*.json
+!config.example.json
+!config.docker.json.example
+agents.json
+*.keystore.json
+.noosphere/
+.noosphere-e2e/
+
+# =============================================================================
+# Development files (not needed in production)
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Logs
+*.log
+logs
+
+# Test files
+coverage
+tests
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Scripts (use local workspace packages)
+scripts/
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# macOS
+.DS_Store

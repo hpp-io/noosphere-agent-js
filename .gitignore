@@ -38,6 +38,9 @@ next-env.d.ts
 .noosphere-e2e/
 *.keystore.json
 config.json
+config-e2e.json
+agents.json
+docker/config.docker.json
 *.db
 *.db-shm
 *.db-wal

@@ -1,0 +1,71 @@
+# =============================================================================
+# Noosphere Agent - Docker Compose (Docker-in-Docker)
+# =============================================================================
+#
+# SECURITY: All sensitive data is passed at runtime, NOT baked into image
+#   - KEYSTORE_PASSWORD: via environment variable
+#   - config.json: mounted as volume
+#   - keystore.json: mounted as volume
+#
+# Usage (from project root):
+#   # Option 1: Using .env file (for development)
+#   docker compose -f docker/docker-compose.yml up -d
+#
+#   # Option 2: Direct environment variable (recommended for production)
+#   KEYSTORE_PASSWORD=your-password docker compose -f docker/docker-compose.yml up -d
+#
+# =============================================================================
+
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: noosphere-agent:latest
+    container_name: noosphere-agent
+    restart: unless-stopped
+    stop_grace_period: 30s  # Allow more time for graceful shutdown (DB checkpoint)
+
+    # Environment variables from .env file
+    # Required: KEYSTORE_PASSWORD
+    # Optional: PAYMENT_ADDRESS, LLMROUTER_API_KEY, GEMINI_API_KEY, PROOF_SERVICE_PRIVATE_KEY, etc.
+    env_file:
+      - ../.env
+
+    environment:
+      - NODE_ENV=production
+      - NOOSPHERE_DATA_DIR=/app/.noosphere
+      - DASHBOARD_ENABLED=true
+      # Pass the docker-compose network name for DinD container communication
+      - DOCKER_NETWORK=docker_default
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "3000:3000"  # Next.js Dashboard
+      - "4000:4000"  # Express API
+
+    volumes:
+      # Docker socket - for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Configuration file (mounted at runtime, NOT in image)
+      - ./config.docker.json:/app/config.json:ro
+
+      # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, registry.json)
+      # Mounting entire directory ensures SQLite WAL files are persisted
+      - ../.noosphere:/app/.noosphere
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -11,6 +11,25 @@ import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { AgentConfigFile, AgentStatus, AgentInstanceStatus } from '../types';
 
+/**
+ * Substitute ${VAR} patterns in env object with actual environment variable values
+ */
+function substituteEnvVars(env: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!env) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    result[key] = value.replace(/\$\{([^}]+)}/g, (match, varName) => {
+      const envValue = process.env[varName];
+      if (envValue === undefined) {
+        logger.warn(`Environment variable ${varName} is not set`);
+        return match;
+      }
+      return envValue;
+    });
+  }
+  return result;
+}
+
 export class AgentInstance extends EventEmitter {
   private noosphereAgent?: NoosphereAgent;
   private status: AgentStatus = 'stopped';
@@ -88,9 +107,9 @@ export class AgentInstance extends EventEmitter {
             logger.info(`[${this.id}] Skipped: ${requestId.slice(0, 10)}... - ${reason}`);
           },
 
-          onRequestFailed: (requestId: string, error: string) => {
-            this.db.updateEventToFailed(requestId, error);
-            logger.error(`[${this.id}] Failed: ${requestId.slice(0, 10)}... - ${error}`);
+          onRequestFailed: (requestId: string, error: string, txHash?: string) => {
+            this.db.updateEventToFailed(requestId, error, txHash);
+            logger.error(`[${this.id}] Failed: ${requestId.slice(0, 10)}...${txHash ? ` (tx: ${txHash.slice(0, 10)}...)` : ''} - ${error}`);
           },
 
           onComputeDelivered: (event: ComputeDeliveredEvent) => {
@@ -148,23 +167,16 @@ export class AgentInstance extends EventEmitter {
             if (containerId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
               return undefined;
             }
-            const container = this.registry?.getContainer(containerId);
-            if (!container) return undefined;
-
-            const configContainer = this.containerMap.get(container.name);
+            // Direct lookup by hash ID (config now uses same hash as blockchain)
+            const configContainer = this.containerMap.get(containerId);
             if (!configContainer) return undefined;
 
             return {
-              id: container.id,
-              name: container.name,
-              image: container.imageName,
-              tag: 'latest',
+              id: containerId,
+              name: configContainer.name,
+              image: configContainer.image,
+              tag: configContainer.tag || 'latest',
               port: configContainer.port,
-              requirements: container.requirements,
-              payments: container.payments
-                ? { basePrice: container.payments.basePrice, unit: container.payments.token, per: container.payments.per }
-                : undefined,
-              verified: container.verified,
             };
           },
 
@@ -235,7 +247,15 @@ export class AgentInstance extends EventEmitter {
         const [image, tag] = container.image.includes(':')
           ? container.image.split(':')
           : [container.image, 'latest'];
-        this.containerMap.set(container.id, { id: container.id, name: container.id, image, tag, port: container.port, env: container.env });
+        // Use hash ID as key, name for display
+        this.containerMap.set(container.id, {
+          id: container.id,
+          name: container.name || container.id.slice(0, 10),
+          image,
+          tag,
+          port: container.port,
+          env: substituteEnvVars(container.env),
+        });
       }
     }
 
@@ -248,11 +268,11 @@ export class AgentInstance extends EventEmitter {
             : [verifier.proofService.image, 'latest'];
           this.containerMap.set(containerId, {
             id: containerId,
-            name: `Proof Service: ${verifier.name}`,
+            name: containerId, // Use valid Docker name (no spaces/colons)
             image,
             tag,
             port: verifier.proofService.port,
-            env: verifier.proofService.env,
+            env: substituteEnvVars(verifier.proofService.env),
             command: verifier.proofService.command,
           });
         }
