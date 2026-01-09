@@ -103,7 +103,7 @@ export function loadConfig(configPath?: string): RuntimeConfig {
     return cachedConfig;
   }
 
-  const path = configPath || join(process.cwd(), 'config.json');
+  const path = configPath || process.env.NOOSPHERE_CONFIG_PATH || join(process.cwd(), 'config.json');
 
   try {
     // Load config.json
