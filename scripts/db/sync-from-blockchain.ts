@@ -17,6 +17,7 @@ import { config as loadEnv } from 'dotenv';
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ABIs } from '@noosphere/contracts';
 import { getDatabase } from '../../lib/db';
 
 loadEnv();
@@ -55,16 +56,8 @@ async function main() {
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
-  // Load ABIs
-  const coordinatorAbiPath = process.env.COORDINATOR_ABI_PATH ||
-    path.join(process.cwd(), '../noosphere-evm/out/Coordinator.sol/Coordinator.abi.json');
-
-  if (!fs.existsSync(coordinatorAbiPath)) {
-    console.error(`❌ Coordinator ABI not found at ${coordinatorAbiPath}`);
-    process.exit(1);
-  }
-
-  const coordinatorAbi = JSON.parse(fs.readFileSync(coordinatorAbiPath, 'utf-8'));
+  // Use ABI from @noosphere/contracts
+  const coordinatorAbi = ABIs.Coordinator;
 
   // Setup provider
   const provider = new ethers.JsonRpcProvider(config.chain.rpcUrl);

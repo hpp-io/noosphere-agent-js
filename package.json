@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@noosphere/agent-core": "^0.1.0-alpha.8",
+    "@noosphere/contracts": "^0.1.0-alpha.5",
     "@noosphere/crypto": "^0.1.0-alpha.5",
     "@noosphere/registry": "^0.1.0-alpha.5",
     "@tailwindcss/postcss": "^4.1.18",
