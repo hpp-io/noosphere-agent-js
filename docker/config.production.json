@@ -1,0 +1,58 @@
+{
+  "chain": {
+    "enabled": true,
+    "rpcUrl": "https://sepolia.hpp.io",
+    "wsRpcUrl": "wss://sepolia.hpp.io",
+    "routerAddress": "0x31B0d4038b65E2c17c769Bad1eEeA18EEb1dBdF6",
+    "coordinatorAddress": "0x5e055cd47e5d16f3645174cfe2423d61fe8f4585",
+    "deploymentBlock": 7776,
+    "processingInterval": 10000,
+    "wallet": {
+      "keystorePath": "/app/.noosphere/keystore.json",
+      "paymentAddress": "0x13F0932e4f36f0BfEA056904bA4EC46C55EC94a0"
+    }
+  },
+  "containers": [
+    {
+      "id": "0x2fe108c896fbbc20874ff97c7f230c6d06da1e60e731cbedae60125468f8333a",
+      "name": "noosphere-hello-world",
+      "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
+      "port": "8081"
+    },
+    {
+      "id": "0x4548979e884d5d80117fbed9525e85279935318bdb71f8b73894cf7230686e93",
+      "name": "noosphere-llm",
+      "image": "ghcr.io/hpp-io/example-llm-noosphere:latest",
+      "port": "8082",
+      "env": {
+        "LLMROUTER_API_KEY": "${LLMROUTER_API_KEY}",
+        "LLMROUTER_BASE_URL": "${LLMROUTER_BASE_URL}",
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    }
+  ],
+  "verifiers": [
+    {
+      "id": "immediate-finalize-verifier",
+      "name": "Immediate Finalize Verifier",
+      "address": "0x672c325941E3190838523052ebFF122146864EAd",
+      "requiresProof": true,
+      "proofService": {
+        "image": "ghcr.io/hpp-io/noosphere-proof-creator:dev",
+        "port": "3001",
+        "command": "npm start",
+        "env": {
+          "RPC_URL": "https://sepolia.hpp.io",
+          "CHAIN_ID": "181228",
+          "IMMEDIATE_FINALIZE_VERIFIER_ADDRESS": "0x672c325941E3190838523052ebFF122146864EAd",
+          "PRIVATE_KEY": "${PROOF_SERVICE_PRIVATE_KEY}"
+        }
+      }
+    }
+  ],
+  "scheduler": {
+    "enabled": true,
+    "cronIntervalMs": 60000,
+    "syncPeriodMs": 60000
+  }
+}

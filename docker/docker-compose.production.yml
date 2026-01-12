@@ -30,7 +30,7 @@
 
 services:
   agent:
-    image: noosphere-agent:latest
+    image: ghcr.io/hpp-io/noosphere-agent-js:latest
     container_name: noosphere-agent
     restart: unless-stopped
     stop_grace_period: 30s  # Allow more time for graceful shutdown (DB checkpoint)
