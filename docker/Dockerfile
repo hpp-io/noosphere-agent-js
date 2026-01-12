@@ -63,6 +63,7 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/app ./app
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/schema.sql ./schema.sql
 COPY --from=builder /app/next.config.js ./next.config.js
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
