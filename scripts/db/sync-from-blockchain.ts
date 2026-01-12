@@ -56,6 +56,14 @@ async function main() {
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
+  // Get my payment wallet address for filtering
+  const myPaymentWallet = config.chain.wallet.paymentAddress?.toLowerCase();
+  if (!myPaymentWallet) {
+    console.error('❌ paymentAddress not found in config.json');
+    process.exit(1);
+  }
+  console.log(`🔑 Filtering events for wallet: ${myPaymentWallet}\n`);
+
   // Use ABI from @noosphere/contracts
   const coordinatorAbi = ABIs.Coordinator;
 
@@ -116,12 +124,18 @@ async function main() {
     if (events.length === 0) continue;
 
     console.log(`  🔍 Blocks ${start}-${end}: ${events.length} RequestStarted events`);
-    requestsOnChain += events.length;
 
     for (const event of events) {
       const eventLog = event as any;
       const requestId = eventLog.args.requestId;
       const commitment = eventLog.args.commitment;
+
+      // Filter: only sync events for my payment wallet
+      if (commitment.walletAddress.toLowerCase() !== myPaymentWallet) {
+        continue;
+      }
+
+      requestsOnChain++;
 
       // Check if event exists in DB
       const existingEvent = db.getEvent(requestId);
@@ -154,7 +168,7 @@ async function main() {
     }
   }
 
-  console.log(`\n  ✓ RequestStarted: ${requestsOnChain} on-chain, ${requestsMissing} missing, ${requestsSynced} synced\n`);
+  console.log(`\n  ✓ RequestStarted: ${requestsOnChain} for my wallet, ${requestsMissing} missing, ${requestsSynced} synced\n`);
 
   // ==================== Phase 2: Sync ComputeDelivered Events ====================
   console.log('📥 Phase 2: Syncing ComputeDelivered events...\n');
@@ -376,10 +390,10 @@ async function main() {
 
   // ==================== Summary ====================
   console.log('='.repeat(50));
-  console.log('📊 Sync Summary');
+  console.log('📊 Sync Summary (filtered by my wallet)');
   console.log('='.repeat(50));
-  console.log(`  RequestStarted:      ${requestsOnChain} on-chain, ${requestsSynced} synced`);
-  console.log(`  ComputeDelivered:    ${deliveriesOnChain} on-chain, ${deliveriesUpdated} updated`);
+  console.log(`  RequestStarted:      ${requestsOnChain} for my wallet, ${requestsSynced} synced`);
+  console.log(`  ComputeDelivered:    ${deliveriesOnChain} in DB, ${deliveriesUpdated} updated`);
   console.log(`  Expired:             ${expiredCount} marked`);
   console.log(`  PrepareTransactions: ${prepareOnChain} from agent, ${prepareSynced} synced`);
   console.log('='.repeat(50));
