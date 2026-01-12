@@ -83,3 +83,11 @@ services:
           memory: 2G
         reservations:
           memory: 512M
+
+    networks:
+      - noosphere
+
+networks:
+  noosphere:
+    name: docker_default
+    driver: bridge

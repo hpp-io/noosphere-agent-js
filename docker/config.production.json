@@ -29,6 +29,16 @@
         "LLMROUTER_BASE_URL": "${LLMROUTER_BASE_URL}",
         "GEMINI_API_KEY": "${GEMINI_API_KEY}"
       }
+    },
+    {
+      "id": "noosphere-freqtrade",
+      "name": "noosphere-freqtrade",
+      "image": "ghcr.io/hpp-io/example-freqtrade-noosphere:latest",
+      "port": "8084",
+      "env": {
+        "EXCHANGE_KEY": "${EXCHANGE_KEY}",
+        "EXCHANGE_SECRET": "${EXCHANGE_SECRET}"
+      }
     }
   ],
   "verifiers": [
