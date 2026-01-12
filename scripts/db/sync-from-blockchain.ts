@@ -258,13 +258,29 @@ async function main() {
   // ==================== Phase 4: Sync Prepare Transactions ====================
   console.log('📥 Phase 4: Syncing PrepareTransactions...\n');
 
-  // Get agent address from keystore
+  // Get agent address from keystore (try multiple paths for Docker compatibility)
   let agentAddress = '';
-  try {
-    const keystorePath = config.chain.wallet.keystorePath;
-    const keystoreData = JSON.parse(fs.readFileSync(path.join(process.cwd(), keystorePath), 'utf-8'));
-    agentAddress = keystoreData.eoa?.address?.toLowerCase() || '';
-  } catch (error) {
+  const keystorePaths = [
+    config.chain.wallet.keystorePath,
+    path.join(process.env.NOOSPHERE_DATA_DIR || '.noosphere', 'keystore.json'),
+    '.noosphere/keystore.json',
+  ];
+
+  for (const keystorePath of keystorePaths) {
+    try {
+      const fullPath = path.isAbsolute(keystorePath) ? keystorePath : path.join(process.cwd(), keystorePath);
+      const keystoreData = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+      agentAddress = keystoreData.eoa?.address?.toLowerCase() || '';
+      if (agentAddress) {
+        console.log(`  Found keystore at: ${fullPath}`);
+        break;
+      }
+    } catch {
+      // Try next path
+    }
+  }
+
+  if (!agentAddress) {
     console.log('  ⚠️  Could not read agent address from keystore, skipping prepare sync\n');
   }
 
@@ -303,6 +319,11 @@ async function main() {
         // Get transaction to check if it's a direct prepareNextInterval call to Coordinator
         const tx = await provider.getTransaction(txHash);
         if (!tx) continue;
+
+        // Must be sent FROM our agent
+        if (tx.from?.toLowerCase() !== agentAddress) {
+          continue;
+        }
 
         // Must be sent TO the Coordinator contract
         if (tx.to?.toLowerCase() !== coordinatorAddressLower) {
