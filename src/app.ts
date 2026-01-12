@@ -14,19 +14,70 @@ import { logger } from '../lib/logger';
 const app = express();
 const httpServer = createServer(app);
 
+// CORS configuration - allow only same hostname (different port)
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (curl, server-to-server, etc.)
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    try {
+      const originUrl = new URL(origin);
+      const originHostname = originUrl.hostname;
+
+      // Allow localhost variations
+      if (originHostname === 'localhost' || originHostname === '127.0.0.1') {
+        callback(null, true);
+        return;
+      }
+
+      // This will be checked against the request's Host header in the middleware
+      // For now, store the origin hostname to validate later
+      callback(null, true);
+    } catch {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+};
+
+// Additional middleware to validate origin matches Host header
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) {
+    next();
+    return;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const originHostname = originUrl.hostname;
+    const hostHeader = req.headers.host?.split(':')[0] || '';
+
+    // Allow if origin hostname matches Host header hostname
+    if (originHostname === hostHeader ||
+        originHostname === 'localhost' ||
+        originHostname === '127.0.0.1') {
+      next();
+      return;
+    }
+
+    // Block mismatched origins
+    res.status(403).json({ error: 'CORS not allowed' });
+  } catch {
+    res.status(403).json({ error: 'Invalid origin' });
+  }
+});
+
 // WebSocket server
 const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Helper to serialize BigInt for JSON/WebSocket
