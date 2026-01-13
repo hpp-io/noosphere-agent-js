@@ -34,6 +34,7 @@ export interface EventRecord {
   fee_earned?: string;
   is_penalty: boolean;
   status: EventStatus;
+  retry_count: number;
   error_message?: string;
   input?: string;
   output?: string;
@@ -178,6 +179,28 @@ export class AgentDatabase {
         );
       `);
     }
+
+    // Run migrations for existing databases
+    this.runMigrations();
+  }
+
+  /**
+   * Run database migrations for schema updates
+   */
+  private runMigrations(): void {
+    // Migration: Add retry_count column to events table
+    try {
+      const hasRetryCount = this.db
+        .prepare("SELECT COUNT(*) as count FROM pragma_table_info('events') WHERE name = 'retry_count'")
+        .get() as { count: number };
+
+      if (hasRetryCount.count === 0) {
+        this.db.exec('ALTER TABLE events ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0');
+        console.log('✓ Migration: Added retry_count column to events table');
+      }
+    } catch (error) {
+      // Column might already exist or table doesn't exist yet
+    }
   }
 
   // ==================== Events ====================
@@ -267,16 +290,40 @@ export class AgentDatabase {
     if (txHash) {
       this.db.prepare(`
         UPDATE events
-        SET status = 'failed', error_message = ?, tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = 'failed', error_message = ?, tx_hash = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE request_id = ? AND status NOT IN ('completed')
       `).run(error, txHash, requestId);
     } else {
       this.db.prepare(`
         UPDATE events
-        SET status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = 'failed', error_message = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE request_id = ? AND status NOT IN ('completed')
       `).run(error, requestId);
     }
+  }
+
+  /**
+   * Get events that can be retried (failed with retry_count < maxRetries)
+   */
+  public getRetryableEvents(maxRetries: number = 3): EventRecord[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM events
+      WHERE status = 'failed' AND retry_count < ?
+      ORDER BY timestamp ASC
+    `).all(maxRetries) as EventRecord[];
+
+    return rows;
+  }
+
+  /**
+   * Reset failed event to pending for retry
+   */
+  public resetEventForRetry(requestId: string): void {
+    this.db.prepare(`
+      UPDATE events
+      SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+      WHERE request_id = ? AND status = 'failed'
+    `).run(requestId);
   }
 
   /**

@@ -6,6 +6,7 @@ import {
   ComputeDeliveredEvent,
   RequestStartedCallbackEvent,
   CommitmentSuccessCallbackEvent,
+  RetryableEvent,
 } from '@noosphere/agent-core';
 import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
@@ -186,6 +187,25 @@ export class AgentInstance extends EventEmitter {
             maxRetryAttempts: 3,
             loadCommittedIntervals: () => this.db.getCommittedIntervalKeys(),
             saveCommittedInterval: () => {},
+          },
+
+          // Retry configuration
+          maxRetries: this.config.retry?.maxRetries ?? 3,
+          retryIntervalMs: this.config.retry?.retryIntervalMs ?? 30000,
+
+          getRetryableEvents: (maxRetries: number): RetryableEvent[] => {
+            const events = this.db.getRetryableEvents(maxRetries);
+            return events.map(e => ({
+              requestId: e.request_id,
+              subscriptionId: e.subscription_id,
+              interval: e.interval,
+              containerId: e.container_id,
+              retryCount: e.retry_count,
+            }));
+          },
+
+          resetEventForRetry: (requestId: string) => {
+            this.db.resetEventForRetry(requestId);
           },
         },
       );

@@ -390,6 +390,9 @@ export default function Dashboard() {
                           <p className="font-medium text-gray-900 dark:text-white">
                             {container.name}
                           </p>
+                          <p className="font-mono text-xs text-gray-400 dark:text-gray-500" title={container.id}>
+                            {container.id.slice(0, 10)}...{container.id.slice(-6)}
+                          </p>
                           {container.description && (
                             <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">
                               {container.description}

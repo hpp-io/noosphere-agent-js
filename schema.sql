@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS events (
     fee_earned TEXT,
     is_penalty BOOLEAN NOT NULL DEFAULT 0,
 
-    -- Processing status: pending, processing, completed, failed, skipped
+    -- Processing status: pending, processing, completed, failed, skipped, expired
     status TEXT NOT NULL DEFAULT 'pending',
     error_message TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
 
     -- Data
     input TEXT,

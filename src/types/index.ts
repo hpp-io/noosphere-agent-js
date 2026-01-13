@@ -65,11 +65,17 @@ export interface SchedulerConfig {
   syncPeriodMs?: number;
 }
 
+export interface RetryConfig {
+  maxRetries?: number;      // Maximum retry attempts for failed requests (default: 3)
+  retryIntervalMs?: number; // Interval to check for retryable events (default: 30000ms)
+}
+
 export interface AgentConfigFile {
   chain: ChainConfig;
   containers?: ContainerConfig[];
   verifiers?: VerifierConfig[];
   scheduler?: SchedulerConfig;
+  retry?: RetryConfig;
   logging?: {
     level?: string;
   };
