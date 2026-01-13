@@ -109,10 +109,13 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
 ```json
 {
   "chain": {
+    "enabled": true,
     "rpcUrl": "https://sepolia.hpp.io",
     "wsRpcUrl": "wss://sepolia.hpp.io",
     "routerAddress": "0x31B0d4038b65E2c17c769Bad1eEeA18EEb1dBdF6",
     "coordinatorAddress": "0x5e055cd47E5d16f3645174Cfe2423D61fe8F4585",
+    "deploymentBlock": 7776,
+    "processingInterval": 5000,
     "wallet": {
       "keystorePath": "./.noosphere/keystore.json",
       "paymentAddress": "0xYourPaymentWallet"
@@ -120,12 +123,21 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
   },
   "containers": [
     {
-      "id": "0x2fe108c896fb...",
+      "id": "0x2fe108c896fbbc20874ff97c7f230c6d06da1e60e731cbedae60125468f8333a",
       "name": "noosphere-hello-world",
       "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
       "port": "8081"
     }
-  ]
+  ],
+  "scheduler": {
+    "enabled": true,
+    "cronIntervalMs": 60000,
+    "syncPeriodMs": 3000
+  },
+  "retry": {
+    "maxRetries": 3,
+    "retryIntervalMs": 30000
+  }
 }
 ```
 

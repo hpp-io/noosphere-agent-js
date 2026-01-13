@@ -14,12 +14,14 @@
   },
   "containers": [
     {
-      "id": "noosphere-hello-world",
+      "id": "0x2fe108c896fbbc20874ff97c7f230c6d06da1e60e731cbedae60125468f8333a",
+      "name": "noosphere-hello-world",
       "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
       "port": "8081"
     },
     {
-      "id": "noosphere-llm",
+      "id": "0x4548979e884d5d80117fbed9525e85279935318bdb71f8b73894cf7230686e93",
+      "name": "noosphere-llm",
       "image": "ghcr.io/hpp-io/example-llm-noosphere:latest",
       "port": "8082",
       "env": {
@@ -59,6 +61,10 @@
     "enabled": true,
     "cronIntervalMs": 60000,
     "syncPeriodMs": 3000
+  },
+  "retry": {
+    "maxRetries": 3,
+    "retryIntervalMs": 30000
   },
   "logging": {
     "level": "info"

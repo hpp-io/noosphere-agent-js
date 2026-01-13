@@ -64,8 +64,11 @@ const testConfig = {
   scheduler: {
     enabled: false,
     cronIntervalMs: 60000,
-    syncPeriodMs: 3000,
-    maxRetryAttempts: 3
+    syncPeriodMs: 3000
+  },
+  retry: {
+    maxRetries: 3,
+    retryIntervalMs: 30000
   },
   containers: [],
   verifiers: []

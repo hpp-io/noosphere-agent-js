@@ -56,7 +56,10 @@ export interface AgentConfig {
     enabled: boolean;
     cronIntervalMs: number;
     syncPeriodMs: number;
-    maxRetryAttempts: number;
+  };
+  retry?: {
+    maxRetries?: number;
+    retryIntervalMs?: number;
   };
   containers: Array<{
     id: string;
