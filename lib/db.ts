@@ -481,12 +481,12 @@ export class AgentDatabase {
   }
 
   /**
-   * Check if event is already processed (completed, failed, or skipped)
+   * Check if event is already processed (completed, failed, skipped, or expired)
    * Used to prevent duplicate processing during event replay
    */
   public isEventProcessed(requestId: string): boolean {
     const result = this.db
-      .prepare("SELECT status FROM events WHERE request_id = ? AND status IN ('completed', 'failed', 'skipped') LIMIT 1")
+      .prepare("SELECT status FROM events WHERE request_id = ? AND status IN ('completed', 'failed', 'skipped', 'expired') LIMIT 1")
       .get(requestId);
     return !!result;
   }

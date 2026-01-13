@@ -56,13 +56,29 @@ async function main() {
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
-  // Get my payment wallet address for filtering
-  const myPaymentWallet = config.chain.wallet.paymentAddress?.toLowerCase();
-  if (!myPaymentWallet) {
-    console.error('❌ paymentAddress not found in config.json');
+  // Build set of supported container IDs from config
+  const supportedContainers = new Set<string>();
+  if (config.containers && Array.isArray(config.containers)) {
+    for (const container of config.containers) {
+      if (container.id) {
+        supportedContainers.add(container.id.toLowerCase());
+        console.log(`  📦 Container: ${container.name || container.id.slice(0, 10)} (${container.id.slice(0, 16)}...)`);
+      }
+    }
+  }
+
+  if (supportedContainers.size === 0) {
+    console.error('❌ No containers found in config.json');
     process.exit(1);
   }
-  console.log(`🔑 Filtering events for wallet: ${myPaymentWallet}\n`);
+
+  // Get my payment wallet address for ComputeDelivered filtering
+  const myPaymentWallet = config.chain.wallet.paymentAddress?.toLowerCase();
+  if (myPaymentWallet) {
+    console.log(`  💳 Payment Wallet: ${myPaymentWallet}`);
+  }
+
+  console.log(`\n🔑 Filtering events for ${supportedContainers.size} supported containers\n`);
 
   // Use ABI from @noosphere/contracts
   const coordinatorAbi = ABIs.Coordinator;
@@ -128,10 +144,11 @@ async function main() {
     for (const event of events) {
       const eventLog = event as any;
       const requestId = eventLog.args.requestId;
+      const containerId = eventLog.args.containerId;
       const commitment = eventLog.args.commitment;
 
-      // Filter: only sync events for my payment wallet
-      if (commitment.walletAddress.toLowerCase() !== myPaymentWallet) {
+      // Filter: only sync events for containers we support
+      if (!supportedContainers.has(containerId.toLowerCase())) {
         continue;
       }
 
@@ -168,13 +185,14 @@ async function main() {
     }
   }
 
-  console.log(`\n  ✓ RequestStarted: ${requestsOnChain} for my wallet, ${requestsMissing} missing, ${requestsSynced} synced\n`);
+  console.log(`\n  ✓ RequestStarted: ${requestsOnChain} for supported containers, ${requestsMissing} missing, ${requestsSynced} synced\n`);
 
   // ==================== Phase 2: Sync ComputeDelivered Events ====================
   console.log('📥 Phase 2: Syncing ComputeDelivered events...\n');
 
   let deliveriesOnChain = 0;
-  let deliveriesUpdated = 0;
+  let deliveriesByMe = 0;
+  let deliveriesByOthers = 0;
   let deliveriesAlreadyComplete = 0;
 
   for (let start = fromBlock; start <= currentBlock; start += chunkSize) {
@@ -194,48 +212,65 @@ async function main() {
     for (const event of events) {
       const eventLog = event as any;
       const requestId = eventLog.args.requestId;
+      const nodeWallet = eventLog.args.nodeWallet?.toLowerCase();
       const txHash = event.transactionHash;
 
-      // Check if event exists in DB and is not already completed
+      // Check if event exists in DB
       const existingEvent = db.getEvent(requestId);
 
       if (!existingEvent) {
-        // Request not in DB, skip (will be synced in next run)
+        // Request not in DB (not a supported container), skip
         continue;
       }
 
-      // Skip if already completed AND has valid gas_fee
-      if (existingEvent.status === 'completed' && existingEvent.gas_fee && existingEvent.gas_fee !== '0') {
+      // Skip if already in final state
+      if (existingEvent.status === 'completed' || existingEvent.status === 'skipped') {
         deliveriesAlreadyComplete++;
         continue;
       }
 
-      deliveriesUpdated++;
+      // Check if this was delivered by us or another agent
+      const isMyDelivery = myPaymentWallet && nodeWallet === myPaymentWallet;
 
-      if (!args.dryRun) {
-        // Get transaction receipt for gas info
-        const receipt = await provider.getTransactionReceipt(txHash);
-        const gasUsed = receipt?.gasUsed?.toString() || '0';
-        // Use effectiveGasPrice (ethers v6) or fall back to gasPrice
-        const gasPrice = (receipt as any)?.effectiveGasPrice?.toString() || receipt?.gasPrice?.toString() || '0';
-        const gasFee = (BigInt(gasUsed) * BigInt(gasPrice)).toString();
+      if (isMyDelivery) {
+        deliveriesByMe++;
 
-        // Update event to completed
-        db.updateEventToCompleted(
-          requestId,
-          txHash,
-          gasFee,
-          existingEvent.fee_amount, // feeEarned = feeAmount for now
-          existingEvent.input || '',
-          existingEvent.output || ''
-        );
+        if (!args.dryRun) {
+          // Get transaction receipt for gas info
+          const receipt = await provider.getTransactionReceipt(txHash);
+          const gasUsed = receipt?.gasUsed?.toString() || '0';
+          const gasPrice = (receipt as any)?.effectiveGasPrice?.toString() || receipt?.gasPrice?.toString() || '0';
+          const gasFee = (BigInt(gasUsed) * BigInt(gasPrice)).toString();
 
-        console.log(`    ✓ Completed: ${requestId.slice(0, 16)}... (tx: ${txHash.slice(0, 12)}...)`);
+          // Update event to completed (our delivery)
+          db.updateEventToCompleted(
+            requestId,
+            txHash,
+            gasFee,
+            existingEvent.fee_amount,
+            existingEvent.input || '',
+            existingEvent.output || ''
+          );
+
+          console.log(`    ✓ Completed (by me): ${requestId.slice(0, 16)}...`);
+        }
+      } else {
+        deliveriesByOthers++;
+
+        if (!args.dryRun) {
+          // Mark as skipped - another agent completed it
+          db.updateEventToSkipped(
+            requestId,
+            `Completed by another agent (${nodeWallet?.slice(0, 10)}...)`
+          );
+
+          console.log(`    ⏭️  Skipped (by other): ${requestId.slice(0, 16)}... → ${nodeWallet?.slice(0, 10)}...`);
+        }
       }
     }
   }
 
-  console.log(`\n  ✓ ComputeDelivered: ${deliveriesOnChain} on-chain, ${deliveriesUpdated} updated, ${deliveriesAlreadyComplete} already complete\n`);
+  console.log(`\n  ✓ ComputeDelivered: ${deliveriesOnChain} on-chain, ${deliveriesByMe} by me, ${deliveriesByOthers} by others, ${deliveriesAlreadyComplete} already processed\n`);
 
   // ==================== Phase 3: Mark Expired Requests ====================
   console.log('📥 Phase 3: Checking for expired requests...\n');
@@ -390,10 +425,10 @@ async function main() {
 
   // ==================== Summary ====================
   console.log('='.repeat(50));
-  console.log('📊 Sync Summary (filtered by my wallet)');
+  console.log('📊 Sync Summary (filtered by supported containers)');
   console.log('='.repeat(50));
-  console.log(`  RequestStarted:      ${requestsOnChain} for my wallet, ${requestsSynced} synced`);
-  console.log(`  ComputeDelivered:    ${deliveriesOnChain} in DB, ${deliveriesUpdated} updated`);
+  console.log(`  RequestStarted:      ${requestsOnChain} for supported containers, ${requestsSynced} synced`);
+  console.log(`  ComputeDelivered:    ${deliveriesByMe} by me, ${deliveriesByOthers} by others`);
   console.log(`  Expired:             ${expiredCount} marked`);
   console.log(`  PrepareTransactions: ${prepareOnChain} from agent, ${prepareSynced} synced`);
   console.log('='.repeat(50));
