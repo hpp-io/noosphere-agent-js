@@ -26,12 +26,13 @@
     "docker:restart": "docker compose -f docker/docker-compose.yml restart"
   },
   "dependencies": {
-    "@noosphere/agent-core": "^0.1.0-alpha.11",
-    "@noosphere/contracts": "^0.1.0-alpha.5",
-    "@noosphere/crypto": "^0.1.0-alpha.5",
-    "@noosphere/registry": "^0.1.0-alpha.5",
+    "@noosphere/agent-core": "file:../noosphere-sdk/packages/agent-core",
+    "@noosphere/contracts": "file:../noosphere-sdk/packages/contracts",
+    "@noosphere/crypto": "file:../noosphere-sdk/packages/crypto",
+    "@noosphere/registry": "file:../noosphere-sdk/packages/registry",
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
+    "axios": "^1.13.2",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.0",

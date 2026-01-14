@@ -70,12 +70,18 @@ export interface RetryConfig {
   retryIntervalMs?: number; // Interval to check for retryable events (default: 30000ms)
 }
 
+export interface PayloadConfig {
+  uploadThreshold?: number;       // Size in bytes to trigger auto-upload (default: 1024)
+  defaultStorage?: 'ipfs' | 'data'; // Default storage for large outputs (default: 'ipfs')
+}
+
 export interface AgentConfigFile {
   chain: ChainConfig;
   containers?: ContainerConfig[];
   verifiers?: VerifierConfig[];
   scheduler?: SchedulerConfig;
   retry?: RetryConfig;
+  payload?: PayloadConfig;
   logging?: {
     level?: string;
   };

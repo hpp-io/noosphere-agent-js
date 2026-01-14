@@ -7,10 +7,13 @@ import {
   RequestStartedCallbackEvent,
   CommitmentSuccessCallbackEvent,
   RetryableEvent,
+  PayloadUtils,
+  PayloadData,
 } from '@noosphere/agent-core';
 import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { AgentConfigFile, AgentStatus, AgentInstanceStatus } from '../types';
+import { PayloadResolver, PayloadResolverConfig } from './payload-resolver';
 
 /**
  * Substitute ${VAR} patterns in env object with actual environment variable values
@@ -40,6 +43,7 @@ export class AgentInstance extends EventEmitter {
   private registry?: RegistryManager;
   private containerMap = new Map<string, any>();
   private db = getDatabase();
+  private payloadResolver: PayloadResolver;
 
   constructor(
     public readonly id: string,
@@ -48,6 +52,18 @@ export class AgentInstance extends EventEmitter {
     private keystorePassword: string,
   ) {
     super();
+
+    // Initialize PayloadResolver with IPFS config from environment
+    this.payloadResolver = new PayloadResolver({
+      uploadThreshold: config.payload?.uploadThreshold ?? 1024,
+      defaultStorage: config.payload?.defaultStorage ?? 'ipfs',
+      ipfs: {
+        apiUrl: process.env.IPFS_API_URL,
+        apiKey: process.env.PINATA_API_KEY,
+        apiSecret: process.env.PINATA_API_SECRET,
+        gateway: process.env.IPFS_GATEWAY,
+      },
+    });
   }
 
   async initialize(): Promise<void> {
@@ -116,13 +132,18 @@ export class AgentInstance extends EventEmitter {
           onComputeDelivered: (event: ComputeDeliveredEvent) => {
             this.lastActiveAt = Date.now();
             const gasUsed = (event.gasUsed * event.gasPrice).toString();
+
+            // Serialize input/output - handle both string and PayloadData formats
+            const inputSerialized = this.serializePayloadField(event.input);
+            const outputSerialized = this.serializePayloadField(event.output);
+
             this.db.updateEventToCompleted(
               event.requestId,
               event.txHash,
               gasUsed,
               event.feeAmount,
-              event.input,
-              event.output,
+              inputSerialized,
+              outputSerialized,
             );
             logger.info(`[${this.id}] Completed: ${event.requestId.slice(0, 10)}...`);
             this.emit('computeDelivered', { agentId: this.id, event });
@@ -259,6 +280,35 @@ export class AgentInstance extends EventEmitter {
       startedAt: this.startedAt,
       lastActiveAt: this.lastActiveAt,
     };
+  }
+
+  /**
+   * Serialize payload field for database storage
+   * Handles both string (legacy) and PayloadData formats
+   */
+  private serializePayloadField(field: string | PayloadData): string {
+    if (typeof field === 'string') {
+      // Legacy string format - convert to PayloadData for consistent storage
+      const payload = PayloadUtils.fromInlineData(field);
+      return this.payloadResolver.serializePayload(payload);
+    }
+
+    // Already PayloadData format
+    return this.payloadResolver.serializePayload(field);
+  }
+
+  /**
+   * Deserialize payload field from database storage
+   */
+  private deserializePayloadField(serialized: string): PayloadData {
+    return this.payloadResolver.deserializePayload(serialized);
+  }
+
+  /**
+   * Get PayloadResolver for external use (e.g., input resolution)
+   */
+  getPayloadResolver(): PayloadResolver {
+    return this.payloadResolver;
   }
 
   private buildContainerMap(): void {
