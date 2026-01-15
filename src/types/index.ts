@@ -75,6 +75,12 @@ export interface PayloadConfig {
   defaultStorage?: 'ipfs' | 'data'; // Default storage for large outputs (default: 'ipfs')
 }
 
+export interface ContainerExecutionConfig {
+  timeout?: number;              // Container execution timeout in ms (default: 300000 = 5 min)
+  connectionRetries?: number;    // Number of connection retry attempts (default: 5)
+  connectionRetryDelayMs?: number; // Delay between retries in ms (default: 3000)
+}
+
 export interface AgentConfigFile {
   chain: ChainConfig;
   containers?: ContainerConfig[];
@@ -82,6 +88,7 @@ export interface AgentConfigFile {
   scheduler?: SchedulerConfig;
   retry?: RetryConfig;
   payload?: PayloadConfig;
+  containerExecution?: ContainerExecutionConfig;
   logging?: {
     level?: string;
   };

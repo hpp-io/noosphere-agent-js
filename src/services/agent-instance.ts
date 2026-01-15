@@ -91,7 +91,11 @@ export class AgentInstance extends EventEmitter {
             deploymentBlock: this.config.chain.deploymentBlock,
           },
           containers: this.containerMap,
+          registryManager: this.registry, // Pass pre-loaded registry to avoid duplicate loading
           paymentWallet: this.config.chain.wallet.paymentAddress,
+
+          // Container execution configuration
+          containerConfig: this.config.containerExecution,
 
           onRequestStarted: (event: RequestStartedCallbackEvent) => {
             this.lastActiveAt = Date.now();

@@ -9,6 +9,7 @@
 #   1. Create directories:
 #      mkdir -p /data/noosphere/config
 #      mkdir -p /data/noosphere/data
+#      mkdir -p /data/noosphere/logs
 #
 #   2. Copy config and keystore:
 #      cp docker/config.docker.json /data/noosphere/config/config.json
@@ -44,6 +45,10 @@ services:
       - NOOSPHERE_DATA_DIR=/app/.noosphere
       - DASHBOARD_ENABLED=true
       - DOCKER_NETWORK=docker_default
+      # File-based logging
+      - LOG_DIR=/app/logs
+      - LOG_MAX_SIZE=10485760
+      - LOG_MAX_FILES=5
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -62,6 +67,9 @@ services:
       # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, keystore.json, registry.json)
       # Mounting entire directory ensures SQLite WAL files are persisted
       - /data/noosphere/data:/app/.noosphere
+
+      # Log files directory
+      - /data/noosphere/logs:/app/logs
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
@@ -84,6 +92,23 @@ services:
         reservations:
           memory: 512M
 
+    networks:
+      - noosphere
+
+  # SQLite Web UI for database management
+  # Access: http://<server>:18080
+  # WARNING: Provides full read/write access - use with caution in production
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: noosphere-sqlite-web
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - /data/noosphere/data:/data
+    command: sqlite_web -H 0.0.0.0 -x /data/agent.db
+    depends_on:
+      - agent
     networks:
       - noosphere
 

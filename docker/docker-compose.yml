@@ -38,6 +38,10 @@ services:
       - DASHBOARD_ENABLED=true
       # Pass the docker-compose network name for DinD container communication
       - DOCKER_NETWORK=docker_default
+      # File-based logging
+      - LOG_DIR=/app/logs
+      - LOG_MAX_SIZE=10485760
+      - LOG_MAX_FILES=5
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -57,6 +61,9 @@ services:
       # Mounting entire directory ensures SQLite WAL files are persisted
       - ../.noosphere:/app/.noosphere
 
+      # Log files directory
+      - ../logs:/app/logs
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
       interval: 30s
@@ -69,3 +76,15 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # SQLite Web UI for database management
+  # Access: http://localhost:18080
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: noosphere-sqlite-web
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - ../.noosphere:/data
+    command: sqlite_web -H 0.0.0.0 -x /data/agent.db
