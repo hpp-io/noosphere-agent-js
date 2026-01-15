@@ -76,3 +76,15 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # SQLite Web UI for database management
+  # Access: http://localhost:18080
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: noosphere-sqlite-web
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - ../.noosphere:/data
+    command: sqlite_web -H 0.0.0.0 -x /data/agent.db

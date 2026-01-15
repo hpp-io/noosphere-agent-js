@@ -95,6 +95,23 @@ services:
     networks:
       - noosphere
 
+  # SQLite Web UI for database management
+  # Access: http://<server>:18080
+  # WARNING: Provides full read/write access - use with caution in production
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: noosphere-sqlite-web
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - /data/noosphere/data:/data
+    command: sqlite_web -H 0.0.0.0 -x /data/agent.db
+    depends_on:
+      - agent
+    networks:
+      - noosphere
+
 networks:
   noosphere:
     name: docker_default
