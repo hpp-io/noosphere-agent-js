@@ -24,7 +24,7 @@ router.get('/', (_req: Request, res: Response) => {
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const manager = getAgentManager();
-    const agent = manager.getAgent(req.params.id);
+    const agent = manager.getAgent(req.params.id as string);
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -64,8 +64,9 @@ router.post('/', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const manager = getAgentManager();
-    await manager.stopAgent(req.params.id);
-    res.json({ success: true, message: `Agent ${req.params.id} stopped` });
+    const id = req.params.id as string;
+    await manager.stopAgent(id);
+    res.json({ success: true, message: `Agent ${id} stopped` });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

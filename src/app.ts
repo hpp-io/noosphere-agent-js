@@ -11,6 +11,32 @@ import { getDatabase } from '../lib/db';
 import { loadConfig } from '../lib/config';
 import { logger } from '../lib/logger';
 
+// Global singleton instances to avoid repeated loading
+let cachedRegistry: RegistryManager | null = null;
+let cachedKeystore: KeystoreManager | null = null;
+let cachedEoaAddress: string | null = null;
+
+async function getGlobalRegistry(): Promise<RegistryManager> {
+  if (!cachedRegistry) {
+    cachedRegistry = new RegistryManager({ autoSync: false, cacheTTL: 3600000 });
+    await cachedRegistry.load();
+  }
+  return cachedRegistry;
+}
+
+async function getGlobalKeystore(): Promise<{ keystore: KeystoreManager; eoaAddress: string }> {
+  if (!cachedKeystore || !cachedEoaAddress) {
+    const config = loadConfig();
+    cachedKeystore = new KeystoreManager(
+      config.chain.wallet.keystorePath,
+      config.secrets.keystorePassword,
+    );
+    await cachedKeystore.load();
+    cachedEoaAddress = cachedKeystore.getEOAAddress();
+  }
+  return { keystore: cachedKeystore, eoaAddress: cachedEoaAddress };
+}
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -101,12 +127,7 @@ app.get('/api/agent/status', async (_req, res) => {
     const config = loadConfig();
     const provider = new JsonRpcProvider(config.chain.rpcUrl);
 
-    const keystore = new KeystoreManager(
-      config.chain.wallet.keystorePath,
-      config.secrets.keystorePassword,
-    );
-    await keystore.load();
-    const eoaAddress = keystore.getEOAAddress();
+    const { eoaAddress } = await getGlobalKeystore();
     const balance = await provider.getBalance(eoaAddress);
     const balanceInGwei = Number(balance) / 1e9;
 
@@ -252,8 +273,7 @@ app.get('/api/scheduler', (_req, res) => {
 app.get('/api/containers', async (_req, res) => {
   try {
     const config = loadConfig();
-    const registry = new RegistryManager({ autoSync: false, cacheTTL: 3600000 });
-    await registry.load();
+    const registry = await getGlobalRegistry();
 
     const stats = registry.getStats();
     const registryContainers = registry.listContainers();
@@ -294,8 +314,7 @@ app.get('/api/containers', async (_req, res) => {
 app.get('/api/verifiers', async (_req, res) => {
   try {
     const config = loadConfig();
-    const registry = new RegistryManager({ autoSync: false, cacheTTL: 3600000 });
-    await registry.load();
+    const registry = await getGlobalRegistry();
 
     const registryVerifiers = registry.listVerifiers();
     const configVerifiers = config.verifiers?.map((v: any) => ({
@@ -337,12 +356,8 @@ app.get('/api/history', async (req, res) => {
     let agentAddress = '';
 
     try {
-      const keystore = new KeystoreManager(
-        config.chain.wallet.keystorePath,
-        config.secrets.keystorePassword,
-      );
-      await keystore.load();
-      agentAddress = keystore.getEOAAddress();
+      const { eoaAddress } = await getGlobalKeystore();
+      agentAddress = eoaAddress;
     } catch {}
 
     const db = getDatabase();

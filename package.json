@@ -26,10 +26,10 @@
     "docker:restart": "docker compose -f docker/docker-compose.yml restart"
   },
   "dependencies": {
-    "@noosphere/agent-core": "^0.1.0-alpha.12",
+    "@noosphere/agent-core": "^0.1.0-alpha.13",
     "@noosphere/contracts": "^0.1.0-alpha.5",
     "@noosphere/crypto": "^0.1.0-alpha.5",
-    "@noosphere/registry": "^0.1.0-alpha.5",
+    "@noosphere/registry": "^0.1.0-alpha.7",
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "better-sqlite3": "^11.8.1",
