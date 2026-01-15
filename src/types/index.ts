@@ -70,12 +70,19 @@ export interface RetryConfig {
   retryIntervalMs?: number; // Interval to check for retryable events (default: 30000ms)
 }
 
+export interface ContainerExecutionConfig {
+  timeout?: number;              // Container execution timeout in ms (default: 300000 = 5 min)
+  connectionRetries?: number;    // Number of connection retry attempts (default: 5)
+  connectionRetryDelayMs?: number; // Delay between retries in ms (default: 3000)
+}
+
 export interface AgentConfigFile {
   chain: ChainConfig;
   containers?: ContainerConfig[];
   verifiers?: VerifierConfig[];
   scheduler?: SchedulerConfig;
   retry?: RetryConfig;
+  containerExecution?: ContainerExecutionConfig;
   logging?: {
     level?: string;
   };

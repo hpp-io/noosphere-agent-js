@@ -77,6 +77,9 @@ export class AgentInstance extends EventEmitter {
           containers: this.containerMap,
           paymentWallet: this.config.chain.wallet.paymentAddress,
 
+          // Container execution configuration
+          containerConfig: this.config.containerExecution,
+
           onRequestStarted: (event: RequestStartedCallbackEvent) => {
             this.lastActiveAt = Date.now();
             const saved = this.db.saveRequestStartedEvent({

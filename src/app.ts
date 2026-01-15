@@ -474,6 +474,16 @@ io.on('connection', (socket) => {
 async function start() {
   const port = parseInt(process.env.EXPRESS_PORT || '4000');
 
+  // Configure file logging if LOG_DIR is set
+  const logDir = process.env.LOG_DIR || process.env.NOOSPHERE_LOG_DIR;
+  if (logDir) {
+    logger.configure({
+      logDir,
+      maxFileSize: parseInt(process.env.LOG_MAX_SIZE || '10485760'), // 10MB default
+      maxFiles: parseInt(process.env.LOG_MAX_FILES || '5'),
+    });
+  }
+
   try {
     const manager = getAgentManager();
 
@@ -514,6 +524,7 @@ async function start() {
       const db = getDatabase();
       db.close();
       logger.info('Database closed');
+      logger.close(); // Close log file stream
       httpServer.close();
       process.exit(0);
     };
