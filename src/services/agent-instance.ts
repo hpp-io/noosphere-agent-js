@@ -53,16 +53,28 @@ export class AgentInstance extends EventEmitter {
   ) {
     super();
 
-    // Initialize PayloadResolver with IPFS config from environment
+    // Initialize PayloadResolver with storage config
     this.payloadResolver = new PayloadResolver({
       uploadThreshold: config.payload?.uploadThreshold ?? 1024,
       defaultStorage: config.payload?.defaultStorage ?? 'ipfs',
+      // IPFS configuration (from config or environment variables)
       ipfs: {
-        apiUrl: process.env.IPFS_API_URL,
-        apiKey: process.env.PINATA_API_KEY,
-        apiSecret: process.env.PINATA_API_SECRET,
-        gateway: process.env.IPFS_GATEWAY,
+        apiUrl: config.payload?.ipfs?.apiUrl || process.env.IPFS_API_URL,
+        apiKey: config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY,
+        apiSecret: config.payload?.ipfs?.apiSecret || process.env.PINATA_API_SECRET,
+        gateway: config.payload?.ipfs?.gateway || process.env.IPFS_GATEWAY,
       },
+      // S3-compatible storage configuration (R2, S3, MinIO)
+      s3: config.payload?.s3 ? {
+        endpoint: config.payload.s3.endpoint,
+        bucket: config.payload.s3.bucket,
+        region: config.payload.s3.region,
+        accessKeyId: config.payload.s3.accessKeyId,
+        secretAccessKey: config.payload.s3.secretAccessKey,
+        publicUrlBase: config.payload.s3.publicUrlBase,
+        keyPrefix: config.payload.s3.keyPrefix,
+        forcePathStyle: config.payload.s3.forcePathStyle,
+      } : undefined,
     });
   }
 

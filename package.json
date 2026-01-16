@@ -26,7 +26,8 @@
     "docker:restart": "docker compose -f docker/docker-compose.yml restart"
   },
   "dependencies": {
-    "@noosphere/agent-core": "^0.1.0-alpha.13",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@noosphere/agent-core": "^0.1.0-alpha.15",
     "@noosphere/contracts": "^0.1.0-alpha.5",
     "@noosphere/crypto": "^0.1.0-alpha.5",
     "@noosphere/registry": "^0.1.0-alpha.7",
