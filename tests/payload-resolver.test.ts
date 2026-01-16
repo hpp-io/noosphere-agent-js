@@ -6,6 +6,13 @@ import {
   DataUriProvider,
 } from '../src/services/payload-resolver';
 
+// Helper to check if hex string contains a substring when decoded
+function hexContains(hex: string, substring: string): boolean {
+  if (!hex.startsWith('0x')) return hex.includes(substring);
+  const decoded = ethers.toUtf8String(hex);
+  return decoded.includes(substring);
+}
+
 describe('PayloadResolver', () => {
   let resolver: PayloadResolver;
 
@@ -45,7 +52,7 @@ describe('PayloadResolver', () => {
     it('should detect PayloadData object', () => {
       const input = {
         contentHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-        uri: 'ipfs://QmTest',
+        uri: ethers.hexlify(ethers.toUtf8Bytes('ipfs://QmTest')), // Hex-encoded URI
       };
       expect(resolver.detectInputType(input)).toBe(InputType.PAYLOAD_DATA);
     });
@@ -65,7 +72,7 @@ describe('PayloadResolver', () => {
         type: 'payload' as const,
         payload: {
           contentHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-          uri: '',
+          uri: '0x', // Empty hex bytes
         },
       };
       expect(resolver.detectInputType(input)).toBe(InputType.PAYLOAD_DATA);
@@ -81,7 +88,9 @@ describe('PayloadResolver', () => {
       expect(result.payload.contentHash).toBe(
         ethers.keccak256(ethers.toUtf8Bytes(content))
       );
-      expect(result.payload.uri).toBe('');
+      // URI is hex-encoded data: URI for inline content
+      expect(result.payload.uri).toMatch(/^0x/);
+      expect(hexContains(result.payload.uri, 'data:')).toBe(true);
     });
 
     it('should resolve data URI input', async () => {
@@ -92,7 +101,8 @@ describe('PayloadResolver', () => {
       const result = await resolver.resolveInput(dataUri);
 
       expect(result.content).toBe(originalContent);
-      expect(result.payload.uri).toBe(dataUri);
+      // URI is hex-encoded
+      expect(hexContains(result.payload.uri, dataUri)).toBe(true);
     });
 
     it('should resolve typed raw input', async () => {
@@ -102,16 +112,21 @@ describe('PayloadResolver', () => {
       const result = await resolver.resolveInput(input);
 
       expect(result.content).toBe(content);
-      expect(result.payload.uri).toBe('');
+      // URI is hex-encoded data: URI for inline content
+      expect(result.payload.uri).toMatch(/^0x/);
+      expect(hexContains(result.payload.uri, 'data:')).toBe(true);
     });
 
-    it('should handle inline PayloadData (no URI)', async () => {
-      const payload = PayloadUtils.fromInlineData('original content');
+    it('should handle inline PayloadData (with data: URI)', async () => {
+      const originalContent = 'original content';
+      const payload = PayloadUtils.fromInlineData(originalContent);
       const result = await resolver.resolveInput(payload);
 
-      // Content not available for inline PayloadData without original
-      expect(result.content).toBe('');
+      // The payload contains a hex-encoded data: URI with the content base64-encoded
+      // The resolver should decode the hex URI and extract the content
       expect(result.payload).toEqual(payload);
+      // Content should be recovered from the data: URI
+      expect(result.content).toBe(originalContent);
     });
   });
 
@@ -120,7 +135,9 @@ describe('PayloadResolver', () => {
       const content = 'small output';
       const result = await resolver.encodeOutput(content);
 
-      expect(result.uri).toBe('');
+      // URI is hex-encoded data: URI for inline content
+      expect(result.uri).toMatch(/^0x/);
+      expect(hexContains(result.uri, 'data:')).toBe(true);
       expect(result.contentHash).toBe(
         ethers.keccak256(ethers.toUtf8Bytes(content))
       );
@@ -131,7 +148,9 @@ describe('PayloadResolver', () => {
       const content = 'x'.repeat(200);
       const result = await resolver.encodeOutput(content);
 
-      expect(result.uri).toContain('data:');
+      // URI is hex-encoded and contains data:
+      expect(result.uri).toMatch(/^0x/);
+      expect(hexContains(result.uri, 'data:')).toBe(true);
       expect(result.contentHash).toBe(
         ethers.keccak256(ethers.toUtf8Bytes(content))
       );
@@ -141,7 +160,9 @@ describe('PayloadResolver', () => {
       const content = 'small';
       const result = await resolver.encodeOutput(content, { forceUpload: true });
 
-      expect(result.uri).toContain('data:');
+      // URI is hex-encoded and contains data:
+      expect(result.uri).toMatch(/^0x/);
+      expect(hexContains(result.uri, 'data:')).toBe(true);
     });
   });
 
@@ -150,7 +171,8 @@ describe('PayloadResolver', () => {
       const empty = resolver.createEmpty();
 
       expect(empty.contentHash).toBe(ethers.ZeroHash);
-      expect(empty.uri).toBe('');
+      // Empty URI is '0x' (empty bytes in hex)
+      expect(empty.uri).toBe('0x');
     });
   });
 
@@ -204,7 +226,9 @@ describe('PayloadResolver', () => {
       expect(deserialized.contentHash).toBe(
         ethers.keccak256(ethers.toUtf8Bytes(legacyContent))
       );
-      expect(deserialized.uri).toBe('');
+      // URI is hex-encoded data: URI
+      expect(deserialized.uri).toMatch(/^0x/);
+      expect(hexContains(deserialized.uri, 'data:')).toBe(true);
     });
   });
 });

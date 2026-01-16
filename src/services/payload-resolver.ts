@@ -306,24 +306,42 @@ export class PayloadResolver {
   }
 
   /**
+   * Decode hex-encoded URI to plain string
+   */
+  private decodeHexUri(uri: string): string {
+    if (uri.startsWith('0x')) {
+      try {
+        return ethers.toUtf8String(uri);
+      } catch {
+        // Not a valid hex string, return as-is
+        return uri;
+      }
+    }
+    return uri;
+  }
+
+  /**
    * Download content from URI
    */
   private async downloadFromUri(uri: string): Promise<string> {
-    if (uri.startsWith('ipfs://')) {
-      return this.ipfsProvider.download(uri);
+    // Decode hex-encoded URI if needed
+    const decodedUri = this.decodeHexUri(uri);
+
+    if (decodedUri.startsWith('ipfs://')) {
+      return this.ipfsProvider.download(decodedUri);
     }
 
-    if (uri.startsWith('https://') || uri.startsWith('http://')) {
-      return this.httpsProvider.download(uri);
+    if (decodedUri.startsWith('https://') || decodedUri.startsWith('http://')) {
+      return this.httpsProvider.download(decodedUri);
     }
 
-    if (uri.startsWith('data:')) {
-      return this.dataUriProvider.download(uri);
+    if (decodedUri.startsWith('data:')) {
+      return this.dataUriProvider.download(decodedUri);
     }
 
-    if (uri.startsWith('ar://')) {
+    if (decodedUri.startsWith('ar://')) {
       // Arweave gateway
-      const txId = uri.replace('ar://', '');
+      const txId = decodedUri.replace('ar://', '');
       const gateway = process.env.ARWEAVE_GATEWAY || 'https://arweave.net';
       return this.httpsProvider.download(`${gateway}/${txId}`);
     }
