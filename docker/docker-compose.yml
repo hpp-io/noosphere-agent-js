@@ -8,20 +8,52 @@
 #   - keystore.json: mounted as volume
 #
 # Usage (from project root):
-#   # Option 1: Using .env file (for development)
-#   docker compose -f docker/docker-compose.yml up -d
+#   # Option 1: Using local Verdaccio registry (for development with local SDK)
+#   docker compose -f docker/docker-compose.yml up verdaccio -d
+#   npm run sdk:publish:local  # Publish SDK packages to Verdaccio
+#   docker compose -f docker/docker-compose.yml up -d --build
 #
-#   # Option 2: Direct environment variable (recommended for production)
-#   KEYSTORE_PASSWORD=your-password docker compose -f docker/docker-compose.yml up -d
+#   # Option 2: Using public npm registry (production)
+#   docker compose -f docker/docker-compose.yml up -d
 #
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Verdaccio - Local npm Registry
+  # ---------------------------------------------------------------------------
+  # Run this first to publish local SDK packages before building agent
+  verdaccio:
+    image: verdaccio/verdaccio:5
+    container_name: noosphere-verdaccio
+    ports:
+      - "4873:4873"
+    volumes:
+      - ./verdaccio/config.yaml:/verdaccio/conf/config.yaml:ro
+      - verdaccio-storage:/verdaccio/storage
+    healthcheck:
+      test: ["CMD", "sh", "-c", "node -e \"fetch('http://localhost:4873/-/ping').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - noosphere
+
+  # ---------------------------------------------------------------------------
+  # Noosphere Agent
+  # ---------------------------------------------------------------------------
   agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # Use local Verdaccio registry via host.docker.internal (for build stage)
+        # Change to https://registry.npmjs.org for production
+        NPM_REGISTRY: http://host.docker.internal:4873
     image: noosphere-agent:latest
+    depends_on:
+      verdaccio:
+        condition: service_healthy
     container_name: noosphere-agent
     restart: unless-stopped
     stop_grace_period: 30s  # Allow more time for graceful shutdown (DB checkpoint)
@@ -37,11 +69,12 @@ services:
       - NOOSPHERE_DATA_DIR=/app/.noosphere
       - DASHBOARD_ENABLED=true
       # Pass the docker-compose network name for DinD container communication
-      - DOCKER_NETWORK=docker_default
-      # File-based logging
+      - DOCKER_NETWORK=noosphere_network
+      # File-based logging (daily rotation with 7-day retention)
       - LOG_DIR=/app/logs
-      - LOG_MAX_SIZE=10485760
-      - LOG_MAX_FILES=5
+      - LOG_LEVEL=info
+      - LOG_MAX_SIZE=52428800
+      - LOG_RETENTION_DAYS=7
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -55,7 +88,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
       # Configuration file (mounted at runtime, NOT in image)
-      - ./config.docker.json:/app/config.json:ro
+      # Use config.docker.anvil.json for Anvil testing, config.docker.json for Sepolia
+      - ./config.docker.anvil.json:/app/config.json:ro
 
       # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, registry.json)
       # Mounting entire directory ensures SQLite WAL files are persisted
@@ -77,6 +111,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    networks:
+      - noosphere
+
   # SQLite Web UI for database management
   # Access: http://localhost:18080
   sqlite-web:
@@ -88,3 +125,13 @@ services:
     volumes:
       - ../.noosphere:/data
     command: sqlite_web -H 0.0.0.0 -x /data/agent.db
+    networks:
+      - noosphere
+
+volumes:
+  verdaccio-storage:
+
+networks:
+  noosphere:
+    name: noosphere_network
+    driver: bridge

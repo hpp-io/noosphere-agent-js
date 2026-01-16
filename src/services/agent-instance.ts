@@ -9,11 +9,11 @@ import {
   RetryableEvent,
   PayloadUtils,
   PayloadData,
+  PayloadResolver,
 } from '@noosphere/agent-core';
 import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { AgentConfigFile, AgentStatus, AgentInstanceStatus } from '../types';
-import { PayloadResolver, PayloadResolverConfig } from './payload-resolver';
 
 /**
  * Substitute ${VAR} patterns in env object with actual environment variable values
@@ -96,6 +96,14 @@ export class AgentInstance extends EventEmitter {
 
           // Container execution configuration
           containerConfig: this.config.containerExecution,
+
+          // Payload encoder for IPFS upload (uses PayloadResolver)
+          payloadEncoder: async (content: string) => {
+            console.log(`  🔄 payloadEncoder called, content length: ${content.length}`);
+            const result = await this.payloadResolver.encode(content);
+            console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...`);
+            return result;
+          },
 
           onRequestStarted: (event: RequestStartedCallbackEvent) => {
             this.lastActiveAt = Date.now();
@@ -294,18 +302,18 @@ export class AgentInstance extends EventEmitter {
     if (typeof field === 'string') {
       // Legacy string format - convert to PayloadData for consistent storage
       const payload = PayloadUtils.fromInlineData(field);
-      return this.payloadResolver.serializePayload(payload);
+      return this.payloadResolver.serialize(payload);
     }
 
     // Already PayloadData format
-    return this.payloadResolver.serializePayload(field);
+    return this.payloadResolver.serialize(field);
   }
 
   /**
    * Deserialize payload field from database storage
    */
   private deserializePayloadField(serialized: string): PayloadData {
-    return this.payloadResolver.deserializePayload(serialized);
+    return this.payloadResolver.deserialize(serialized);
   }
 
   /**

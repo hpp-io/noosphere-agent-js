@@ -34,38 +34,65 @@ export class IpfsStorageProvider implements StorageProvider {
   private apiUrl: string;
   private apiKey?: string;
   private apiSecret?: string;
+  private gateway: string;
+  private isLocalNode: boolean;
 
   constructor(options: {
     apiUrl?: string;
     apiKey?: string;
     apiSecret?: string;
+    gateway?: string;
   } = {}) {
-    this.apiUrl = options.apiUrl || process.env.IPFS_API_URL || 'https://api.pinata.cloud';
+    this.apiUrl = options.apiUrl || process.env.IPFS_API_URL || 'http://localhost:5001';
     this.apiKey = options.apiKey || process.env.PINATA_API_KEY;
     this.apiSecret = options.apiSecret || process.env.PINATA_API_SECRET;
+    this.gateway = options.gateway || process.env.IPFS_GATEWAY || 'http://localhost:8080/ipfs';
+
+    // Detect if using local IPFS node
+    this.isLocalNode = this.apiUrl.includes('localhost') || this.apiUrl.includes('127.0.0.1');
   }
 
   async upload(content: string | Buffer): Promise<string> {
-    if (!this.apiKey || !this.apiSecret) {
-      throw new Error('IPFS storage not configured: missing API keys');
-    }
-
     const data = typeof content === 'string' ? content : content.toString('utf-8');
 
     try {
-      const response = await axios.post(
-        `${this.apiUrl}/pinning/pinJSONToIPFS`,
-        { pinataContent: data },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            pinata_api_key: this.apiKey,
-            pinata_secret_api_key: this.apiSecret,
-          },
-        }
-      );
+      if (this.isLocalNode) {
+        // Local IPFS node - use /api/v0/add
+        const FormData = (await import('form-data')).default;
+        const formData = new FormData();
+        formData.append('file', Buffer.from(data, 'utf-8'), { filename: 'data.json' });
 
-      return `ipfs://${response.data.IpfsHash}`;
+        const response = await axios.post(
+          `${this.apiUrl}/api/v0/add`,
+          formData,
+          {
+            headers: formData.getHeaders(),
+            timeout: 30000,
+          }
+        );
+
+        logger.info(`Uploaded to local IPFS: ${response.data.Hash}`);
+        return `ipfs://${response.data.Hash}`;
+      } else {
+        // Pinata API
+        if (!this.apiKey || !this.apiSecret) {
+          throw new Error('IPFS storage not configured: missing Pinata API keys');
+        }
+
+        const response = await axios.post(
+          `${this.apiUrl}/pinning/pinJSONToIPFS`,
+          { pinataContent: data },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              pinata_api_key: this.apiKey,
+              pinata_secret_api_key: this.apiSecret,
+            },
+          }
+        );
+
+        return `ipfs://${response.data.IpfsHash}`;
+      }
     } catch (error) {
       logger.error('Failed to upload to IPFS:', error);
       throw new Error(`IPFS upload failed: ${(error as Error).message}`);
@@ -78,8 +105,7 @@ export class IpfsStorageProvider implements StorageProvider {
 
     if (uri.startsWith('ipfs://')) {
       const cid = uri.replace('ipfs://', '');
-      const gateway = process.env.IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs';
-      gatewayUrl = `${gateway}/${cid}`;
+      gatewayUrl = `${this.gateway}/${cid}`;
     } else {
       gatewayUrl = uri;
     }
@@ -316,8 +342,11 @@ export class PayloadResolver {
     const contentSize = Buffer.byteLength(content, 'utf-8');
     const shouldUpload = options.forceUpload || contentSize > this.uploadThreshold;
 
+    console.log(`  📦 PayloadResolver.encodeOutput: size=${contentSize}, threshold=${this.uploadThreshold}, shouldUpload=${shouldUpload}`);
+
     if (!shouldUpload) {
       // Inline storage - just compute hash
+      console.log(`  📦 Using inline data: URI (size <= threshold)`);
       return PayloadUtils.fromInlineData(content);
     }
 
@@ -325,16 +354,21 @@ export class PayloadResolver {
     const storage = options.storage || this.defaultStorage;
     let uri: string;
 
+    console.log(`  📦 Uploading to ${storage}...`);
+
     try {
       if (storage === 'ipfs') {
         uri = await this.ipfsProvider.upload(content);
+        console.log(`  ✅ Uploaded ${contentSize} bytes to IPFS: ${uri}`);
         logger.info(`Uploaded ${contentSize} bytes to IPFS: ${uri}`);
       } else {
         uri = await this.dataUriProvider.upload(content);
+        console.log(`  ✅ Encoded ${contentSize} bytes as data URI`);
         logger.info(`Encoded ${contentSize} bytes as data URI`);
       }
     } catch (error) {
       // Fallback to inline if upload fails
+      console.log(`  ❌ External storage failed: ${(error as Error).message}`);
       logger.warn(`External storage failed, using inline: ${(error as Error).message}`);
       return PayloadUtils.fromInlineData(content);
     }
@@ -386,6 +420,11 @@ export class PayloadResolver {
    * Check if IPFS storage is configured
    */
   isIpfsConfigured(): boolean {
+    const apiUrl = process.env.IPFS_API_URL || 'http://localhost:5001';
+    const isLocalNode = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+    // Local node doesn't need API keys
+    if (isLocalNode) return true;
+    // Pinata needs API keys
     return !!(process.env.PINATA_API_KEY && process.env.PINATA_API_SECRET);
   }
 }

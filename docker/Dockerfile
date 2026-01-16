@@ -17,14 +17,20 @@ FROM node:22-alpine AS deps
 
 WORKDIR /app
 
+# Build argument for npm registry (default: public npm)
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package.json only (not package-lock.json to avoid integrity hash conflicts with local registry)
+COPY package.json ./
 
-# Install all dependencies (including devDependencies for build)
-RUN npm ci
+# Configure npm registry and install dependencies
+# Using npm install without lockfile when using local registry
+RUN npm config set registry ${NPM_REGISTRY} && \
+    echo "Using npm registry: ${NPM_REGISTRY}" && \
+    npm install
 
 # -----------------------------------------------------------------------------
 # Stage 2: Builder

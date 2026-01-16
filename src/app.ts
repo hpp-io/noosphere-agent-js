@@ -494,8 +494,9 @@ async function start() {
   if (logDir) {
     logger.configure({
       logDir,
-      maxFileSize: parseInt(process.env.LOG_MAX_SIZE || '10485760'), // 10MB default
-      maxFiles: parseInt(process.env.LOG_MAX_FILES || '5'),
+      level: (process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error') || 'info',
+      maxFileSize: parseInt(process.env.LOG_MAX_SIZE || '52428800'), // 50MB default
+      retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || '7'), // 7 days default
     });
   }
 
