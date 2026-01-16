@@ -9,36 +9,20 @@
 #
 # Usage (from project root):
 #   # Option 1: Using local Verdaccio registry (for development with local SDK)
-#   docker compose -f docker/docker-compose.yml up verdaccio -d
-#   npm run sdk:publish:local  # Publish SDK packages to Verdaccio
-#   docker compose -f docker/docker-compose.yml up -d --build
+#   #   First, start Verdaccio from noosphere-sdk:
+#   #   cd ../noosphere-sdk && docker compose -f docker/docker-compose.yml up -d
+#   #   ./scripts/publish-local.sh
+#   #   Then build agent:
+#   docker compose -f docker/docker-compose.yml build --build-arg NPM_REGISTRY=http://host.docker.internal:4873
+#   docker compose -f docker/docker-compose.yml up -d
 #
 #   # Option 2: Using public npm registry (production)
+#   docker compose -f docker/docker-compose.yml build --build-arg NPM_REGISTRY=https://registry.npmjs.org
 #   docker compose -f docker/docker-compose.yml up -d
 #
 # =============================================================================
 
 services:
-  # ---------------------------------------------------------------------------
-  # Verdaccio - Local npm Registry
-  # ---------------------------------------------------------------------------
-  # Run this first to publish local SDK packages before building agent
-  verdaccio:
-    image: verdaccio/verdaccio:5
-    container_name: noosphere-verdaccio
-    ports:
-      - "4873:4873"
-    volumes:
-      - ./verdaccio/config.yaml:/verdaccio/conf/config.yaml:ro
-      - verdaccio-storage:/verdaccio/storage
-    healthcheck:
-      test: ["CMD", "sh", "-c", "node -e \"fetch('http://localhost:4873/-/ping').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - noosphere
-
   # ---------------------------------------------------------------------------
   # Noosphere Agent
   # ---------------------------------------------------------------------------
@@ -47,13 +31,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        # Use local Verdaccio registry via host.docker.internal (for build stage)
-        # Change to https://registry.npmjs.org for production
-        NPM_REGISTRY: http://host.docker.internal:4873
+        # Default: use public npm registry
+        # For local SDK testing: --build-arg NPM_REGISTRY=http://host.docker.internal:4873
+        NPM_REGISTRY: https://registry.npmjs.org
     image: noosphere-agent:latest
-    depends_on:
-      verdaccio:
-        condition: service_healthy
     container_name: noosphere-agent
     restart: unless-stopped
     stop_grace_period: 30s  # Allow more time for graceful shutdown (DB checkpoint)
@@ -127,9 +108,6 @@ services:
     command: sqlite_web -H 0.0.0.0 -x /data/agent.db
     networks:
       - noosphere
-
-volumes:
-  verdaccio-storage:
 
 networks:
   noosphere:

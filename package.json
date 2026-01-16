@@ -23,10 +23,7 @@
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
-    "docker:restart": "docker compose -f docker/docker-compose.yml restart",
-    "verdaccio:up": "docker compose -f docker/docker-compose.yml up verdaccio -d",
-    "verdaccio:down": "docker compose -f docker/docker-compose.yml stop verdaccio",
-    "sdk:publish:local": "./scripts/publish-sdk-local.sh"
+    "docker:restart": "docker compose -f docker/docker-compose.yml restart"
   },
   "dependencies": {
     "@noosphere/agent-core": "^0.1.0-alpha.13",
