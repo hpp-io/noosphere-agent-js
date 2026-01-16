@@ -64,18 +64,29 @@ export class AgentInstance extends EventEmitter {
         apiSecret: config.payload?.ipfs?.apiSecret || process.env.PINATA_API_SECRET,
         gateway: config.payload?.ipfs?.gateway || process.env.IPFS_GATEWAY,
       },
-      // S3-compatible storage configuration (R2, S3, MinIO)
-      s3: config.payload?.s3 ? {
-        endpoint: config.payload.s3.endpoint,
-        bucket: config.payload.s3.bucket,
-        region: config.payload.s3.region,
-        accessKeyId: config.payload.s3.accessKeyId,
-        secretAccessKey: config.payload.s3.secretAccessKey,
-        publicUrlBase: config.payload.s3.publicUrlBase,
-        keyPrefix: config.payload.s3.keyPrefix,
-        forcePathStyle: config.payload.s3.forcePathStyle,
+      // S3-compatible storage configuration (R2, S3, MinIO) - from config or environment variables
+      s3: (config.payload?.s3 || process.env.R2_BUCKET) ? {
+        endpoint: config.payload?.s3?.endpoint || process.env.R2_ENDPOINT,
+        bucket: config.payload?.s3?.bucket || process.env.R2_BUCKET || '',
+        region: config.payload?.s3?.region || process.env.R2_REGION || 'auto',
+        accessKeyId: config.payload?.s3?.accessKeyId || process.env.R2_ACCESS_KEY_ID || '',
+        secretAccessKey: config.payload?.s3?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY || '',
+        publicUrlBase: config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE || '',
+        keyPrefix: config.payload?.s3?.keyPrefix || process.env.R2_KEY_PREFIX,
+        forcePathStyle: config.payload?.s3?.forcePathStyle,
       } : undefined,
     });
+
+    // Log storage configuration
+    const defaultStorage = config.payload?.defaultStorage ?? 'ipfs';
+    const s3Configured = !!(config.payload?.s3 || process.env.R2_BUCKET);
+    const ipfsConfigured = !!(config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY);
+    console.log(`📦 Payload storage config: default=${defaultStorage}, S3=${s3Configured ? '✓' : '✗'}, IPFS=${ipfsConfigured ? '✓' : '✗'}`);
+    if (s3Configured) {
+      const bucket = config.payload?.s3?.bucket || process.env.R2_BUCKET;
+      const publicUrl = config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE;
+      console.log(`   S3: bucket=${bucket}, publicUrl=${publicUrl?.substring(0, 50)}...`);
+    }
   }
 
   async initialize(): Promise<void> {
