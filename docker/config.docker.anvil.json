@@ -23,7 +23,7 @@
   },
   "payload": {
     "uploadThreshold": 1024,
-    "defaultStorage": "ipfs"
+    "defaultStorage": "s3"
   },
   "containerExecution": {
     "timeout": 180000,
