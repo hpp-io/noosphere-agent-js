@@ -476,9 +476,11 @@ describe('AgentInstance callbacks', () => {
 
       const result = await capturedCallbacks.payloadEncoder('test content');
 
+      // The payloadEncoder converts URI to hex-encoded bytes for on-chain submission
+      // 'ipfs://QmEncoded' -> 0x697066733a2f2f516d456e636f646564
       expect(result).toEqual({
         contentHash: '0xencodedHash',
-        uri: 'ipfs://QmEncoded',
+        uri: '0x697066733a2f2f516d456e636f646564',
       });
     });
   });
