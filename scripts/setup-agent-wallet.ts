@@ -117,6 +117,17 @@ async function main() {
   console.log(`  ✓ Approved agent EOA as spender: ${wallet.address}`);
   console.log(`  ✓ Transaction: ${approveTx.hash}\n`);
 
+  // Step 2.6: Deposit ETH to payment wallet for verification escrow
+  console.log('📝 Step 2.6: Depositing ETH to payment wallet for escrow...');
+  const depositAmount = ethers.parseUnits('1000', 'gwei'); // 1000 gwei for escrow
+  const depositTx = await wallet.sendTransaction({
+    to: walletAddress,
+    value: depositAmount,
+  });
+  await depositTx.wait();
+  console.log(`  ✓ Deposited ${ethers.formatUnits(depositAmount, 'gwei')} gwei to Payment Wallet`);
+  console.log(`  ✓ Transaction: ${depositTx.hash}\n`);
+
   // Step 3: Update config.json with payment wallet address
   console.log('📝 Step 3: Updating config.json...');
   configData.chain.wallet.paymentAddress = walletAddress;

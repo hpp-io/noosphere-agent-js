@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { ethers } from 'ethers';
 import {
   NoosphereAgent,
   RegistryManager,
@@ -125,7 +126,17 @@ export class AgentInstance extends EventEmitter {
             console.log(`  🔄 payloadEncoder called, content length: ${content.length}`);
             const result = await this.payloadResolver.encode(content);
             console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...`);
-            return result;
+            // Convert URI to bytes (hex-encoded) for on-chain submission if not already encoded
+            // The @noosphere/agent-core PayloadResolver may return bytes (0x...) or plain string
+            let uri = result.uri;
+            if (!uri.startsWith('0x')) {
+              uri = ethers.hexlify(ethers.toUtf8Bytes(uri));
+              console.log(`  🔄 Converted URI to bytes: ${uri.substring(0, 50)}...`);
+            }
+            return {
+              contentHash: result.contentHash,
+              uri: uri,
+            };
           },
 
           onRequestStarted: (event: RequestStartedCallbackEvent) => {
@@ -257,6 +268,14 @@ export class AgentInstance extends EventEmitter {
               interval: e.interval,
               containerId: e.container_id,
               retryCount: e.retry_count,
+              // Fee and commitment fields for valid retry
+              feeAmount: e.fee_amount || '0',
+              feeToken: e.fee_token || '0x0000000000000000000000000000000000000000',
+              walletAddress: e.wallet_address || '0x0000000000000000000000000000000000000000',
+              verifier: e.verifier || '0x0000000000000000000000000000000000000000',
+              coordinator: this.config.chain.coordinatorAddress,
+              redundancy: e.redundancy || 1,
+              useDeliveryInbox: false,
             }));
           },
 

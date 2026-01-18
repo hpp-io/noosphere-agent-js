@@ -4,7 +4,7 @@
   "description": "Next.js-based Noosphere agent using noosphere-sdk",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
-    "@noosphere/agent-core": "^0.2.0-alpha.2",
+    "@noosphere/agent-core": "^0.2.0-alpha.3",
     "@noosphere/contracts": "^0.2.0-alpha.1",
     "@noosphere/crypto": "^0.2.0-alpha.1",
     "@noosphere/payload": "^0.2.0-alpha.1",

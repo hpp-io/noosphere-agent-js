@@ -61,7 +61,7 @@ services:
       - "host.docker.internal:host-gateway"
 
     ports:
-      - "3000:3000"  # Next.js Dashboard
+      - "3100:3000"  # Next.js Dashboard (mapped to 3100)
       - "4000:4000"  # Express API
 
     volumes:
@@ -70,7 +70,7 @@ services:
 
       # Configuration file (mounted at runtime, NOT in image)
       # Use config.docker.anvil.json for Anvil testing, config.docker.json for Sepolia
-      - ./config.docker.anvil.json:/app/config.json:ro
+      - ./config.docker.json:/app/config.json:ro
 
       # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, registry.json)
       # Mounting entire directory ensures SQLite WAL files are persisted
