@@ -1,26 +1,37 @@
 /**
  * PayloadResolver - Hybrid Input/Output Handler
  *
- * Resolves inputs from various sources:
- * - Raw data (inline)
- * - URI references (ipfs://, https://, ar://, data:)
- * - PayloadData structures (contentHash + uri)
- *
- * Encodes outputs as PayloadData:
- * - Small outputs: inline (empty URI)
- * - Large outputs: upload to IPFS and reference
+ * This module wraps @noosphere/payload and adds agent-specific functionality:
+ * - S3/R2 storage support
+ * - Environment variable configuration
+ * - Legacy compatibility with @noosphere/agent-core
  */
 
 import { ethers } from 'ethers';
 import axios from 'axios';
 import { PayloadUtils, PayloadData, InputType } from '@noosphere/agent-core';
+import {
+  PayloadResolver as BasePayloadResolver,
+  IpfsStorage,
+  S3Storage,
+  DataUriStorage,
+  HttpStorage,
+  type PayloadResolverConfig as BaseConfig,
+  type IpfsConfig,
+  type S3Config,
+  computeContentHash,
+  verifyContentHash,
+  createDataUriPayload,
+  detectPayloadType,
+  PayloadType,
+} from '@noosphere/payload';
 import { logger } from '../../lib/logger';
 
 // Size threshold for auto-upload to external storage (1KB default)
 const DEFAULT_UPLOAD_THRESHOLD = 1024;
 
 /**
- * Storage provider interface for external content
+ * Storage provider interface for external content (legacy compatibility)
  */
 export interface StorageProvider {
   upload(content: string | Buffer): Promise<string>; // Returns URI
@@ -29,27 +40,29 @@ export interface StorageProvider {
 
 /**
  * IPFS storage provider using Pinata or local node
+ * Wraps @noosphere/payload IpfsStorage with axios for Node.js compatibility
  */
 export class IpfsStorageProvider implements StorageProvider {
+  private storage: IpfsStorage;
+  private gateway: string;
   private apiUrl: string;
   private apiKey?: string;
   private apiSecret?: string;
-  private gateway: string;
   private isLocalNode: boolean;
 
-  constructor(options: {
-    apiUrl?: string;
-    apiKey?: string;
-    apiSecret?: string;
-    gateway?: string;
-  } = {}) {
+  constructor(options: IpfsConfig = {}) {
     this.apiUrl = options.apiUrl || process.env.IPFS_API_URL || 'http://localhost:5001';
-    this.apiKey = options.apiKey || process.env.PINATA_API_KEY;
-    this.apiSecret = options.apiSecret || process.env.PINATA_API_SECRET;
-    this.gateway = options.gateway || process.env.IPFS_GATEWAY || 'http://localhost:8080/ipfs';
-
-    // Detect if using local IPFS node
+    this.apiKey = options.pinataApiKey || process.env.PINATA_API_KEY;
+    this.apiSecret = options.pinataApiSecret || process.env.PINATA_API_SECRET;
+    this.gateway = options.gateway || process.env.IPFS_GATEWAY || 'http://localhost:8080/ipfs/';
     this.isLocalNode = this.apiUrl.includes('localhost') || this.apiUrl.includes('127.0.0.1');
+
+    this.storage = new IpfsStorage({
+      gateway: this.gateway,
+      pinataApiKey: this.apiKey,
+      pinataApiSecret: this.apiSecret,
+      apiUrl: this.apiUrl,
+    });
   }
 
   async upload(content: string | Buffer): Promise<string> {
@@ -57,7 +70,7 @@ export class IpfsStorageProvider implements StorageProvider {
 
     try {
       if (this.isLocalNode) {
-        // Local IPFS node - use /api/v0/add
+        // Local IPFS node - use axios for better Node.js compatibility
         const FormData = (await import('form-data')).default;
         const formData = new FormData();
         formData.append('file', Buffer.from(data, 'utf-8'), { filename: 'data.json' });
@@ -74,24 +87,10 @@ export class IpfsStorageProvider implements StorageProvider {
         logger.info(`Uploaded to local IPFS: ${response.data.Hash}`);
         return `ipfs://${response.data.Hash}`;
       } else {
-        // Pinata API
-        if (!this.apiKey || !this.apiSecret) {
-          throw new Error('IPFS storage not configured: missing Pinata API keys');
-        }
-
-        const response = await axios.post(
-          `${this.apiUrl}/pinning/pinJSONToIPFS`,
-          { pinataContent: data },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              pinata_api_key: this.apiKey,
-              pinata_secret_api_key: this.apiSecret,
-            },
-          }
-        );
-
-        return `ipfs://${response.data.IpfsHash}`;
+        // Use @noosphere/payload IpfsStorage for Pinata
+        const result = await this.storage.upload(data);
+        logger.info(`Uploaded to Pinata: ${result.uri}`);
+        return result.uri;
       }
     } catch (error) {
       logger.error('Failed to upload to IPFS:', error);
@@ -100,19 +99,8 @@ export class IpfsStorageProvider implements StorageProvider {
   }
 
   async download(uri: string): Promise<string> {
-    // Convert IPFS URI to gateway URL
-    let gatewayUrl: string;
-
-    if (uri.startsWith('ipfs://')) {
-      const cid = uri.replace('ipfs://', '');
-      gatewayUrl = `${this.gateway}/${cid}`;
-    } else {
-      gatewayUrl = uri;
-    }
-
     try {
-      const response = await axios.get(gatewayUrl, { timeout: 30000 });
-      return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      return await this.storage.download(uri);
     } catch (error) {
       logger.error(`Failed to download from ${uri}:`, error);
       throw new Error(`IPFS download failed: ${(error as Error).message}`);
@@ -124,12 +112,19 @@ export class IpfsStorageProvider implements StorageProvider {
  * HTTPS storage provider for web-accessible content
  */
 export class HttpsStorageProvider implements StorageProvider {
+  private storage: HttpStorage;
+
+  constructor() {
+    this.storage = new HttpStorage();
+  }
+
   async upload(_content: string | Buffer): Promise<string> {
     throw new Error('HTTPS upload not supported - use a dedicated storage service');
   }
 
   async download(uri: string): Promise<string> {
     try {
+      // Use axios for better Node.js compatibility
       const response = await axios.get(uri, { timeout: 30000 });
       return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
     } catch (error) {
@@ -143,23 +138,20 @@ export class HttpsStorageProvider implements StorageProvider {
  * Data URI handler (base64 encoded content)
  */
 export class DataUriProvider implements StorageProvider {
+  private storage: DataUriStorage;
+
+  constructor() {
+    this.storage = new DataUriStorage();
+  }
+
   async upload(content: string | Buffer): Promise<string> {
     const data = typeof content === 'string' ? content : content.toString('utf-8');
-    const base64 = Buffer.from(data).toString('base64');
-    return `data:application/json;base64,${base64}`;
+    const result = await this.storage.upload(data);
+    return result.uri;
   }
 
   async download(uri: string): Promise<string> {
-    if (!uri.startsWith('data:')) {
-      throw new Error('Invalid data URI');
-    }
-
-    const match = uri.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
-      throw new Error('Invalid data URI format');
-    }
-
-    return Buffer.from(match[2], 'base64').toString('utf-8');
+    return this.storage.download(uri);
   }
 }
 
@@ -168,13 +160,9 @@ export class DataUriProvider implements StorageProvider {
  */
 export interface PayloadResolverConfig {
   uploadThreshold?: number; // Size in bytes to trigger auto-upload
-  defaultStorage?: 'ipfs' | 'data'; // Default storage for large outputs
-  ipfs?: {
-    apiUrl?: string;
-    apiKey?: string;
-    apiSecret?: string;
-    gateway?: string;
-  };
+  defaultStorage?: 'ipfs' | 's3' | 'data'; // Default storage for large outputs
+  ipfs?: IpfsConfig;
+  s3?: S3Config;
 }
 
 /**
@@ -194,8 +182,9 @@ export class PayloadResolver {
   private ipfsProvider: IpfsStorageProvider;
   private httpsProvider: HttpsStorageProvider;
   private dataUriProvider: DataUriProvider;
+  private s3Storage?: S3Storage;
   private uploadThreshold: number;
-  private defaultStorage: 'ipfs' | 'data';
+  private defaultStorage: 'ipfs' | 's3' | 'data';
 
   constructor(config: PayloadResolverConfig = {}) {
     this.ipfsProvider = new IpfsStorageProvider(config.ipfs);
@@ -203,6 +192,11 @@ export class PayloadResolver {
     this.dataUriProvider = new DataUriProvider();
     this.uploadThreshold = config.uploadThreshold || DEFAULT_UPLOAD_THRESHOLD;
     this.defaultStorage = config.defaultStorage || 'ipfs';
+
+    // Initialize S3 storage if configured
+    if (config.s3) {
+      this.s3Storage = new S3Storage(config.s3);
+    }
   }
 
   /**
@@ -244,9 +238,7 @@ export class PayloadResolver {
       str.startsWith('ipfs://') ||
       str.startsWith('https://') ||
       str.startsWith('http://') ||
-      str.startsWith('ar://') ||
-      str.startsWith('data:') ||
-      str.startsWith('chain://')
+      str.startsWith('data:')
     );
   }
 
@@ -281,10 +273,9 @@ export class PayloadResolver {
           : (input as { payload: PayloadData }).payload;
 
         // If URI is empty, it's inline data - we can't recover the content
-        // This case should be handled by the caller providing the content separately
         if (!payloadData.uri) {
           return {
-            content: '', // Content not available for inline PayloadData without original
+            content: '',
             payload: payloadData,
           };
         }
@@ -313,7 +304,6 @@ export class PayloadResolver {
       try {
         return ethers.toUtf8String(uri);
       } catch {
-        // Not a valid hex string, return as-is
         return uri;
       }
     }
@@ -339,13 +329,6 @@ export class PayloadResolver {
       return this.dataUriProvider.download(decodedUri);
     }
 
-    if (decodedUri.startsWith('ar://')) {
-      // Arweave gateway
-      const txId = decodedUri.replace('ar://', '');
-      const gateway = process.env.ARWEAVE_GATEWAY || 'https://arweave.net';
-      return this.httpsProvider.download(`${gateway}/${txId}`);
-    }
-
     throw new Error(`Unsupported URI scheme: ${uri}`);
   }
 
@@ -355,27 +338,30 @@ export class PayloadResolver {
    */
   async encodeOutput(
     content: string,
-    options: { forceUpload?: boolean; storage?: 'ipfs' | 'data' } = {}
+    options: { forceUpload?: boolean; storage?: 'ipfs' | 's3' | 'data' } = {}
   ): Promise<PayloadData> {
     const contentSize = Buffer.byteLength(content, 'utf-8');
     const shouldUpload = options.forceUpload || contentSize > this.uploadThreshold;
+    const storage = options.storage || this.defaultStorage;
 
     console.log(`  📦 PayloadResolver.encodeOutput: size=${contentSize}, threshold=${this.uploadThreshold}, shouldUpload=${shouldUpload}`);
 
-    if (!shouldUpload) {
-      // Inline storage - just compute hash
-      console.log(`  📦 Using inline data: URI (size <= threshold)`);
+    if (!shouldUpload || storage === 'data') {
+      console.log(`  📦 Using inline data URI`);
       return PayloadUtils.fromInlineData(content);
     }
-
-    // Upload to external storage
-    const storage = options.storage || this.defaultStorage;
-    let uri: string;
 
     console.log(`  📦 Uploading to ${storage}...`);
 
     try {
-      if (storage === 'ipfs') {
+      let uri: string;
+
+      if (storage === 's3' && this.s3Storage) {
+        const result = await this.s3Storage.upload(content);
+        uri = result.uri;
+        console.log(`  ✅ Uploaded ${contentSize} bytes to S3: ${uri}`);
+        logger.info(`Uploaded ${contentSize} bytes to S3: ${uri}`);
+      } else if (storage === 'ipfs') {
         uri = await this.ipfsProvider.upload(content);
         console.log(`  ✅ Uploaded ${contentSize} bytes to IPFS: ${uri}`);
         logger.info(`Uploaded ${contentSize} bytes to IPFS: ${uri}`);
@@ -384,14 +370,13 @@ export class PayloadResolver {
         console.log(`  ✅ Encoded ${contentSize} bytes as data URI`);
         logger.info(`Encoded ${contentSize} bytes as data URI`);
       }
+
+      return PayloadUtils.fromExternalUri(content, uri);
     } catch (error) {
-      // Fallback to inline if upload fails
       console.log(`  ❌ External storage failed: ${(error as Error).message}`);
       logger.warn(`External storage failed, using inline: ${(error as Error).message}`);
       return PayloadUtils.fromInlineData(content);
     }
-
-    return PayloadUtils.fromExternalUri(content, uri);
   }
 
   /**
@@ -429,7 +414,6 @@ export class PayloadResolver {
         uri: parsed.uri || '',
       };
     } catch {
-      // Legacy format - treat as raw content hash
       return PayloadUtils.fromInlineData(serialized);
     }
   }
@@ -440,12 +424,19 @@ export class PayloadResolver {
   isIpfsConfigured(): boolean {
     const apiUrl = process.env.IPFS_API_URL || 'http://localhost:5001';
     const isLocalNode = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
-    // Local node doesn't need API keys
     if (isLocalNode) return true;
-    // Pinata needs API keys
     return !!(process.env.PINATA_API_KEY && process.env.PINATA_API_SECRET);
   }
 }
+
+// Re-export from @noosphere/payload for convenience
+export {
+  computeContentHash,
+  verifyContentHash,
+  createDataUriPayload,
+  detectPayloadType,
+  PayloadType,
+} from '@noosphere/payload';
 
 // Export singleton instance with default config
 let defaultResolver: PayloadResolver | null = null;

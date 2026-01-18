@@ -60,18 +60,18 @@ export class AgentInstance extends EventEmitter {
       // IPFS configuration (from config or environment variables)
       ipfs: {
         apiUrl: config.payload?.ipfs?.apiUrl || process.env.IPFS_API_URL,
-        apiKey: config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY,
-        apiSecret: config.payload?.ipfs?.apiSecret || process.env.PINATA_API_SECRET,
+        pinataApiKey: config.payload?.ipfs?.pinataApiKey || config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY,
+        pinataApiSecret: config.payload?.ipfs?.pinataApiSecret || config.payload?.ipfs?.apiSecret || process.env.PINATA_API_SECRET,
         gateway: config.payload?.ipfs?.gateway || process.env.IPFS_GATEWAY,
       },
       // S3-compatible storage configuration (R2, S3, MinIO) - from config or environment variables
       s3: (config.payload?.s3 || process.env.R2_BUCKET) ? {
-        endpoint: config.payload?.s3?.endpoint || process.env.R2_ENDPOINT,
+        endpoint: config.payload?.s3?.endpoint || process.env.R2_ENDPOINT || '',
         bucket: config.payload?.s3?.bucket || process.env.R2_BUCKET || '',
         region: config.payload?.s3?.region || process.env.R2_REGION || 'auto',
         accessKeyId: config.payload?.s3?.accessKeyId || process.env.R2_ACCESS_KEY_ID || '',
         secretAccessKey: config.payload?.s3?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY || '',
-        publicUrlBase: config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE || '',
+        publicUrlBase: config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE,
         keyPrefix: config.payload?.s3?.keyPrefix || process.env.R2_KEY_PREFIX,
         forcePathStyle: config.payload?.s3?.forcePathStyle,
       } : undefined,
@@ -80,7 +80,7 @@ export class AgentInstance extends EventEmitter {
     // Log storage configuration
     const defaultStorage = config.payload?.defaultStorage ?? 'ipfs';
     const s3Configured = !!(config.payload?.s3 || process.env.R2_BUCKET);
-    const ipfsConfigured = !!(config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY);
+    const ipfsConfigured = !!(config.payload?.ipfs?.pinataApiKey || config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY);
     console.log(`📦 Payload storage config: default=${defaultStorage}, S3=${s3Configured ? '✓' : '✗'}, IPFS=${ipfsConfigured ? '✓' : '✗'}`);
     if (s3Configured) {
       const bucket = config.payload?.s3?.bucket || process.env.R2_BUCKET;

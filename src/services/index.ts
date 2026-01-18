@@ -12,11 +12,15 @@ export {
 export type {
   PayloadResolverConfig,
   ResolvedPayload,
-  IPayloadStorage,
-  StorageConfig,
-  UploadResult,
-  IpfsStorageConfig,
 } from '@noosphere/agent-core';
+
+// Re-export storage types from @noosphere/payload
+export type {
+  IPayloadStorage,
+  UploadResult,
+  IpfsConfig,
+  S3Config,
+} from '@noosphere/payload';
 
 // Legacy local exports (deprecated - use SDK versions above)
 export {

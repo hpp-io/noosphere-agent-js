@@ -44,11 +44,6 @@ describe('PayloadResolver', () => {
       expect(resolver.detectInputType(input)).toBe(InputType.URI_STRING);
     });
 
-    it('should detect Arweave URI input', () => {
-      const input = 'ar://bNbA3TEQVL60xlgCcqdz4ZPH';
-      expect(resolver.detectInputType(input)).toBe(InputType.URI_STRING);
-    });
-
     it('should detect PayloadData object', () => {
       const input = {
         contentHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',

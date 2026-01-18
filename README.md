@@ -111,6 +111,7 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
 | `PROOF_SERVICE_PRIVATE_KEY` | For verifiers with proof service (optional) |
 
 **Payload Storage (S3/R2):**
+
 | Variable | Description |
 |----------|-------------|
 | `R2_ENDPOINT` | S3-compatible endpoint URL |
@@ -122,19 +123,13 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
 | `R2_KEY_PREFIX` | Optional key prefix |
 
 **Payload Storage (IPFS/Pinata):**
+
 | Variable | Description |
 |----------|-------------|
 | `PINATA_API_KEY` | Pinata API key |
 | `PINATA_API_SECRET` | Pinata API secret |
 | `IPFS_GATEWAY` | IPFS gateway URL |
 | `IPFS_API_URL` | IPFS API URL (for local node) |
-
-**Container Environment:**
-| Variable | Description |
-|----------|-------------|
-| `LLMROUTER_API_KEY` | LLM Router API key (for LLM container) |
-| `LLMROUTER_BASE_URL` | LLM Router base URL |
-| `GEMINI_API_KEY` | Google Gemini API key |
 
 ### Config File (`config.json`)
 
@@ -227,7 +222,6 @@ The agent supports URI-based payload resolution for handling large inputs and ou
 | `data:` | Inline base64-encoded | Small payloads (< threshold) |
 | `ipfs://` | IPFS content addressing | Decentralized storage |
 | `https://` | HTTP(S) URLs | R2, S3, any HTTP storage |
-| `ar://` | Arweave permanent storage | Permanent archival |
 
 ### Configuration
 

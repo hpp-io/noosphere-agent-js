@@ -71,10 +71,12 @@ export interface RetryConfig {
 }
 
 export interface IpfsConfig {
-  apiUrl?: string;      // IPFS API URL (default: http://localhost:5001)
-  gateway?: string;     // IPFS Gateway URL (default: http://localhost:8080/ipfs/)
-  apiKey?: string;      // Pinata API key
-  apiSecret?: string;   // Pinata API secret
+  apiUrl?: string;            // IPFS API URL (default: http://localhost:5001)
+  gateway?: string;           // IPFS Gateway URL (default: http://localhost:8080/ipfs/)
+  pinataApiKey?: string;      // Pinata API key (preferred)
+  pinataApiSecret?: string;   // Pinata API secret (preferred)
+  apiKey?: string;            // Pinata API key (deprecated, use pinataApiKey)
+  apiSecret?: string;         // Pinata API secret (deprecated, use pinataApiSecret)
 }
 
 export interface S3Config {
