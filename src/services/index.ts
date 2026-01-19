@@ -1,0 +1,37 @@
+export { AgentInstance } from './agent-instance';
+export { AgentManager, getAgentManager } from './agent-manager';
+
+// Re-export SDK PayloadResolver and storage (preferred)
+export {
+  PayloadResolver,
+  PayloadScheme,
+  IpfsStorage,
+  DataUriStorage,
+  HttpStorage,
+} from '@noosphere/agent-core';
+export type {
+  PayloadResolverConfig,
+  ResolvedPayload,
+} from '@noosphere/agent-core';
+
+// Re-export storage types from @noosphere/payload
+export type {
+  IPayloadStorage,
+  UploadResult,
+  IpfsConfig,
+  S3Config,
+} from '@noosphere/payload';
+
+// Legacy local exports (deprecated - use SDK versions above)
+export {
+  PayloadResolver as LegacyPayloadResolver,
+  getPayloadResolver,
+  IpfsStorageProvider,
+  HttpsStorageProvider,
+  DataUriProvider,
+} from './payload-resolver';
+export type {
+  StorageProvider,
+  PayloadResolverConfig as LegacyPayloadResolverConfig,
+  HybridInput,
+} from './payload-resolver';

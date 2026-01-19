@@ -8,19 +8,32 @@
 #   - keystore.json: mounted as volume
 #
 # Usage (from project root):
-#   # Option 1: Using .env file (for development)
+#   # Option 1: Using local Verdaccio registry (for development with local SDK)
+#   #   First, start Verdaccio from noosphere-sdk:
+#   #   cd ../noosphere-sdk && docker compose -f docker/docker-compose.yml up -d
+#   #   ./scripts/publish-local.sh
+#   #   Then build agent:
+#   docker compose -f docker/docker-compose.yml build --build-arg NPM_REGISTRY=http://host.docker.internal:4873
 #   docker compose -f docker/docker-compose.yml up -d
 #
-#   # Option 2: Direct environment variable (recommended for production)
-#   KEYSTORE_PASSWORD=your-password docker compose -f docker/docker-compose.yml up -d
+#   # Option 2: Using public npm registry (production)
+#   docker compose -f docker/docker-compose.yml build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+#   docker compose -f docker/docker-compose.yml up -d
 #
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Noosphere Agent
+  # ---------------------------------------------------------------------------
   agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # Default: use public npm registry
+        # For local SDK testing: --build-arg NPM_REGISTRY=http://host.docker.internal:4873
+        NPM_REGISTRY: https://registry.npmjs.org
     image: noosphere-agent:latest
     container_name: noosphere-agent
     restart: unless-stopped
@@ -37,17 +50,18 @@ services:
       - NOOSPHERE_DATA_DIR=/app/.noosphere
       - DASHBOARD_ENABLED=true
       # Pass the docker-compose network name for DinD container communication
-      - DOCKER_NETWORK=docker_default
-      # File-based logging
+      - DOCKER_NETWORK=noosphere_network
+      # File-based logging (daily rotation with 7-day retention)
       - LOG_DIR=/app/logs
-      - LOG_MAX_SIZE=10485760
-      - LOG_MAX_FILES=5
+      - LOG_LEVEL=info
+      - LOG_MAX_SIZE=52428800
+      - LOG_RETENTION_DAYS=7
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
     ports:
-      - "3000:3000"  # Next.js Dashboard
+      - "3100:3000"  # Next.js Dashboard (mapped to 3100)
       - "4000:4000"  # Express API
 
     volumes:
@@ -55,6 +69,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
       # Configuration file (mounted at runtime, NOT in image)
+      # Use config.docker.anvil.json for Anvil testing, config.docker.json for Sepolia
       - ./config.docker.json:/app/config.json:ro
 
       # Persistent data directory (includes agent.db, agent.db-wal, agent.db-shm, registry.json)
@@ -77,6 +92,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    networks:
+      - noosphere
+
   # SQLite Web UI for database management
   # Access: http://localhost:18080
   sqlite-web:
@@ -88,3 +106,10 @@ services:
     volumes:
       - ../.noosphere:/data
     command: sqlite_web -H 0.0.0.0 -x /data/agent.db
+    networks:
+      - noosphere
+
+networks:
+  noosphere:
+    name: noosphere_network
+    driver: bridge

@@ -165,6 +165,8 @@ export class AgentDatabase {
           redundancy INTEGER NOT NULL,
           fee_amount TEXT NOT NULL,
           fee_token TEXT NOT NULL,
+          verifier TEXT,
+          wallet_address TEXT,
           gas_fee TEXT NOT NULL,
           fee_earned TEXT NOT NULL,
           is_penalty BOOLEAN NOT NULL DEFAULT 0,

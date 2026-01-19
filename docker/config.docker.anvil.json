@@ -1,0 +1,69 @@
+{
+  "chain": {
+    "enabled": true,
+    "rpcUrl": "http://host.docker.internal:8545",
+    "wsRpcUrl": "ws://host.docker.internal:8545",
+    "routerAddress": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "coordinatorAddress": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "deploymentBlock": 1,
+    "processingInterval": 2000,
+    "wallet": {
+      "keystorePath": "/app/.noosphere/keystore.json",
+      "paymentAddress": "0x8efa1819ff5b279077368d44b593a4543280e402"
+    }
+  },
+  "scheduler": {
+    "enabled": true,
+    "cronIntervalMs": 5000,
+    "syncPeriodMs": 2000
+  },
+  "retry": {
+    "maxRetries": 3,
+    "retryIntervalMs": 5000
+  },
+  "payload": {
+    "uploadThreshold": 1024,
+    "defaultStorage": "s3"
+  },
+  "containerExecution": {
+    "timeout": 180000,
+    "connectionRetries": 3,
+    "connectionRetryDelayMs": 1000
+  },
+  "containers": [
+    {
+      "id": "0x2fe108c896fbbc20874ff97c7f230c6d06da1e60e731cbedae60125468f8333a",
+      "name": "noosphere-hello-world",
+      "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
+      "port": "8081"
+    },
+    {
+      "id": "0x4548979e884d5d80117fbed9525e85279935318bdb71f8b73894cf7230686e93",
+      "name": "noosphere-llm",
+      "image": "ghcr.io/hpp-io/example-llm-noosphere:latest",
+      "port": "8082",
+      "env": {
+        "LLMROUTER_API_KEY": "${LLMROUTER_API_KEY}",
+        "LLMROUTER_BASE_URL": "${LLMROUTER_BASE_URL}",
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    },
+    {
+      "id": "0x8f7c89d5e1a3b2c4d6e5f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9",
+      "name": "noosphere-freqtrade",
+      "image": "ghcr.io/hpp-io/example-freqtrade-noosphere:latest",
+      "port": "8083"
+    }
+  ],
+  "verifiers": [
+    {
+      "id": "immediate-finalize-verifier",
+      "name": "Immediate Finalize Verifier",
+      "address": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "requiresProof": false
+    }
+  ],
+  "logging": {
+    "level": "debug"
+  }
+}

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { ethers } from 'ethers';
 import {
   NoosphereAgent,
   RegistryManager,
@@ -7,6 +8,9 @@ import {
   RequestStartedCallbackEvent,
   CommitmentSuccessCallbackEvent,
   RetryableEvent,
+  PayloadUtils,
+  PayloadData,
+  PayloadResolver,
 } from '@noosphere/agent-core';
 import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
@@ -40,6 +44,7 @@ export class AgentInstance extends EventEmitter {
   private registry?: RegistryManager;
   private containerMap = new Map<string, any>();
   private db = getDatabase();
+  private payloadResolver: PayloadResolver;
 
   constructor(
     public readonly id: string,
@@ -48,6 +53,41 @@ export class AgentInstance extends EventEmitter {
     private keystorePassword: string,
   ) {
     super();
+
+    // Initialize PayloadResolver with storage config
+    this.payloadResolver = new PayloadResolver({
+      uploadThreshold: config.payload?.uploadThreshold ?? 1024,
+      defaultStorage: config.payload?.defaultStorage ?? 'ipfs',
+      // IPFS configuration (from config or environment variables)
+      ipfs: {
+        apiUrl: config.payload?.ipfs?.apiUrl || process.env.IPFS_API_URL,
+        pinataApiKey: config.payload?.ipfs?.pinataApiKey || config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY,
+        pinataApiSecret: config.payload?.ipfs?.pinataApiSecret || config.payload?.ipfs?.apiSecret || process.env.PINATA_API_SECRET,
+        gateway: config.payload?.ipfs?.gateway || process.env.IPFS_GATEWAY,
+      },
+      // S3-compatible storage configuration (R2, S3, MinIO) - from config or environment variables
+      s3: (config.payload?.s3 || process.env.R2_BUCKET) ? {
+        endpoint: config.payload?.s3?.endpoint || process.env.R2_ENDPOINT || '',
+        bucket: config.payload?.s3?.bucket || process.env.R2_BUCKET || '',
+        region: config.payload?.s3?.region || process.env.R2_REGION || 'auto',
+        accessKeyId: config.payload?.s3?.accessKeyId || process.env.R2_ACCESS_KEY_ID || '',
+        secretAccessKey: config.payload?.s3?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY || '',
+        publicUrlBase: config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE,
+        keyPrefix: config.payload?.s3?.keyPrefix || process.env.R2_KEY_PREFIX,
+        forcePathStyle: config.payload?.s3?.forcePathStyle,
+      } : undefined,
+    });
+
+    // Log storage configuration
+    const defaultStorage = config.payload?.defaultStorage ?? 'ipfs';
+    const s3Configured = !!(config.payload?.s3 || process.env.R2_BUCKET);
+    const ipfsConfigured = !!(config.payload?.ipfs?.pinataApiKey || config.payload?.ipfs?.apiKey || process.env.PINATA_API_KEY);
+    console.log(`📦 Payload storage config: default=${defaultStorage}, S3=${s3Configured ? '✓' : '✗'}, IPFS=${ipfsConfigured ? '✓' : '✗'}`);
+    if (s3Configured) {
+      const bucket = config.payload?.s3?.bucket || process.env.R2_BUCKET;
+      const publicUrl = config.payload?.s3?.publicUrlBase || process.env.R2_PUBLIC_URL_BASE;
+      console.log(`   S3: bucket=${bucket}, publicUrl=${publicUrl?.substring(0, 50)}...`);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -80,6 +120,24 @@ export class AgentInstance extends EventEmitter {
 
           // Container execution configuration
           containerConfig: this.config.containerExecution,
+
+          // Payload encoder for IPFS upload (uses PayloadResolver)
+          payloadEncoder: async (content: string) => {
+            console.log(`  🔄 payloadEncoder called, content length: ${content.length}`);
+            const result = await this.payloadResolver.encode(content);
+            console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...`);
+            // Convert URI to bytes (hex-encoded) for on-chain submission if not already encoded
+            // The @noosphere/agent-core PayloadResolver may return bytes (0x...) or plain string
+            let uri = result.uri;
+            if (!uri.startsWith('0x')) {
+              uri = ethers.hexlify(ethers.toUtf8Bytes(uri));
+              console.log(`  🔄 Converted URI to bytes: ${uri.substring(0, 50)}...`);
+            }
+            return {
+              contentHash: result.contentHash,
+              uri: uri,
+            };
+          },
 
           onRequestStarted: (event: RequestStartedCallbackEvent) => {
             this.lastActiveAt = Date.now();
@@ -120,13 +178,18 @@ export class AgentInstance extends EventEmitter {
           onComputeDelivered: (event: ComputeDeliveredEvent) => {
             this.lastActiveAt = Date.now();
             const gasUsed = (event.gasUsed * event.gasPrice).toString();
+
+            // Serialize input/output - handle both string and PayloadData formats
+            const inputSerialized = this.serializePayloadField(event.input);
+            const outputSerialized = this.serializePayloadField(event.output);
+
             this.db.updateEventToCompleted(
               event.requestId,
               event.txHash,
               gasUsed,
               event.feeAmount,
-              event.input,
-              event.output,
+              inputSerialized,
+              outputSerialized,
             );
             logger.info(`[${this.id}] Completed: ${event.requestId.slice(0, 10)}...`);
             this.emit('computeDelivered', { agentId: this.id, event });
@@ -205,6 +268,14 @@ export class AgentInstance extends EventEmitter {
               interval: e.interval,
               containerId: e.container_id,
               retryCount: e.retry_count,
+              // Fee and commitment fields for valid retry
+              feeAmount: e.fee_amount || '0',
+              feeToken: e.fee_token || '0x0000000000000000000000000000000000000000',
+              walletAddress: e.wallet_address || '0x0000000000000000000000000000000000000000',
+              verifier: e.verifier || '0x0000000000000000000000000000000000000000',
+              coordinator: this.config.chain.coordinatorAddress,
+              redundancy: e.redundancy || 1,
+              useDeliveryInbox: false,
             }));
           },
 
@@ -263,6 +334,35 @@ export class AgentInstance extends EventEmitter {
       startedAt: this.startedAt,
       lastActiveAt: this.lastActiveAt,
     };
+  }
+
+  /**
+   * Serialize payload field for database storage
+   * Handles both string (legacy) and PayloadData formats
+   */
+  private serializePayloadField(field: string | PayloadData): string {
+    if (typeof field === 'string') {
+      // Legacy string format - convert to PayloadData for consistent storage
+      const payload = PayloadUtils.fromInlineData(field);
+      return this.payloadResolver.serialize(payload);
+    }
+
+    // Already PayloadData format
+    return this.payloadResolver.serialize(field);
+  }
+
+  /**
+   * Deserialize payload field from database storage
+   */
+  private deserializePayloadField(serialized: string): PayloadData {
+    return this.payloadResolver.deserialize(serialized);
+  }
+
+  /**
+   * Get PayloadResolver for external use (e.g., input resolution)
+   */
+  getPayloadResolver(): PayloadResolver {
+    return this.payloadResolver;
   }
 
   private buildContainerMap(): void {

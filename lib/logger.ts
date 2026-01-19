@@ -2,7 +2,13 @@
  * Logger Utility
  *
  * Provides consistent logging with timestamps and configurable log levels.
- * Supports both console and file-based logging with rotation.
+ * Supports both console and file-based logging with daily rotation.
+ *
+ * Features:
+ * - Daily log rotation with timestamp-based filenames (agent-YYYY-MM-DD.log)
+ * - Configurable retention period (default: 7 days)
+ * - Size-based rotation within the same day
+ * - Automatic cleanup of old log files
  *
  * Log Levels:
  * - debug: Detailed debugging information
@@ -28,18 +34,23 @@ interface LoggerOptions {
   level?: LogLevel;
   showTimestamp?: boolean;
   logDir?: string; // Directory for log files
-  maxFileSize?: number; // Max size in bytes before rotation (default: 10MB)
-  maxFiles?: number; // Max number of rotated files to keep (default: 5)
+  maxFileSize?: number; // Max size in bytes before intra-day rotation (default: 50MB)
+  retentionDays?: number; // Number of days to keep logs (default: 7)
+  logToConsole?: boolean; // Whether to log to console (default: true)
 }
 
 class Logger {
   private level: LogLevel = 'info';
   private showTimestamp: boolean = true;
   private logDir?: string;
-  private maxFileSize: number = 10 * 1024 * 1024; // 10MB
-  private maxFiles: number = 5;
+  private maxFileSize: number = 50 * 1024 * 1024; // 50MB
+  private retentionDays: number = 7;
+  private logToConsole: boolean = true;
   private currentLogFile?: string;
+  private currentDate?: string;
   private writeStream?: fs.WriteStream;
+  private rotationCheckInterval?: ReturnType<typeof setInterval>;
+  private intraDayRotationCount: number = 0;
 
   /**
    * Configure the logger
@@ -54,13 +65,37 @@ class Logger {
     if (options.maxFileSize !== undefined) {
       this.maxFileSize = options.maxFileSize;
     }
-    if (options.maxFiles !== undefined) {
-      this.maxFiles = options.maxFiles;
+    if (options.retentionDays !== undefined) {
+      this.retentionDays = options.retentionDays;
+    }
+    if (options.logToConsole !== undefined) {
+      this.logToConsole = options.logToConsole;
     }
     if (options.logDir !== undefined) {
       this.logDir = options.logDir;
       this.initFileLogging();
     }
+  }
+
+  /**
+   * Get current date string (YYYY-MM-DD)
+   */
+  private getCurrentDateString(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * Get log filename for a date
+   */
+  private getLogFileName(dateStr: string, rotationIndex: number = 0): string {
+    if (rotationIndex > 0) {
+      return `agent-${dateStr}.${rotationIndex}.log`;
+    }
+    return `agent-${dateStr}.log`;
   }
 
   /**
@@ -75,12 +110,43 @@ class Logger {
         fs.mkdirSync(this.logDir, { recursive: true });
       }
 
-      this.currentLogFile = path.join(this.logDir, 'agent.log');
+      this.currentDate = this.getCurrentDateString();
+      this.intraDayRotationCount = this.findLatestRotationIndex(this.currentDate);
+      this.currentLogFile = path.join(this.logDir, this.getLogFileName(this.currentDate, this.intraDayRotationCount));
       this.openWriteStream();
+
+      // Setup daily rotation check (every minute)
+      this.rotationCheckInterval = setInterval(() => {
+        this.checkDailyRotation();
+      }, 60000);
+
+      // Cleanup old logs on startup
+      this.cleanupOldLogs();
+
       console.log(`📝 File logging enabled: ${this.currentLogFile}`);
+      console.log(`   Retention: ${this.retentionDays} days, Max size: ${Math.round(this.maxFileSize / 1024 / 1024)}MB`);
     } catch (error) {
       console.error('Failed to initialize file logging:', error);
     }
+  }
+
+  /**
+   * Find the latest rotation index for a given date
+   */
+  private findLatestRotationIndex(dateStr: string): number {
+    if (!this.logDir) return 0;
+
+    let index = 0;
+    while (true) {
+      const fileName = this.getLogFileName(dateStr, index + 1);
+      const filePath = path.join(this.logDir, fileName);
+      if (fs.existsSync(filePath)) {
+        index++;
+      } else {
+        break;
+      }
+    }
+    return index;
   }
 
   /**
@@ -100,26 +166,20 @@ class Logger {
   }
 
   /**
-   * Check and rotate log file if needed
+   * Check if daily rotation is needed
    */
-  private checkRotation() {
-    if (!this.currentLogFile || !this.logDir) return;
-
-    try {
-      const stats = fs.statSync(this.currentLogFile);
-      if (stats.size >= this.maxFileSize) {
-        this.rotateLogFile();
-      }
-    } catch {
-      // File doesn't exist yet, no rotation needed
+  private checkDailyRotation() {
+    const newDate = this.getCurrentDateString();
+    if (newDate !== this.currentDate) {
+      this.rotateToDailyLog(newDate);
     }
   }
 
   /**
-   * Rotate log files
+   * Rotate to a new daily log file
    */
-  private rotateLogFile() {
-    if (!this.currentLogFile || !this.logDir) return;
+  private rotateToDailyLog(newDate: string) {
+    if (!this.logDir) return;
 
     // Close current stream
     if (this.writeStream) {
@@ -127,28 +187,82 @@ class Logger {
       this.writeStream = undefined;
     }
 
-    // Rotate existing files
-    for (let i = this.maxFiles - 1; i >= 1; i--) {
-      const oldFile = path.join(this.logDir, `agent.log.${i}`);
-      const newFile = path.join(this.logDir, `agent.log.${i + 1}`);
-      if (fs.existsSync(oldFile)) {
-        if (i === this.maxFiles - 1) {
-          fs.unlinkSync(oldFile); // Delete oldest
-        } else {
-          fs.renameSync(oldFile, newFile);
-        }
-      }
-    }
-
-    // Rename current log to .1
-    const rotatedFile = path.join(this.logDir, 'agent.log.1');
-    if (fs.existsSync(this.currentLogFile)) {
-      fs.renameSync(this.currentLogFile, rotatedFile);
-    }
+    // Update to new date
+    this.currentDate = newDate;
+    this.intraDayRotationCount = 0;
+    this.currentLogFile = path.join(this.logDir, this.getLogFileName(newDate));
 
     // Open new stream
     this.openWriteStream();
-    console.log(`📝 Log file rotated: ${rotatedFile}`);
+    console.log(`📝 Daily log rotation: ${this.currentLogFile}`);
+
+    // Cleanup old logs
+    this.cleanupOldLogs();
+  }
+
+  /**
+   * Check and rotate log file if size exceeded
+   */
+  private checkSizeRotation() {
+    if (!this.currentLogFile || !this.logDir) return;
+
+    try {
+      const stats = fs.statSync(this.currentLogFile);
+      if (stats.size >= this.maxFileSize) {
+        this.rotateIntraDay();
+      }
+    } catch {
+      // File doesn't exist yet, no rotation needed
+    }
+  }
+
+  /**
+   * Rotate within the same day (size-based)
+   */
+  private rotateIntraDay() {
+    if (!this.currentLogFile || !this.logDir || !this.currentDate) return;
+
+    // Close current stream
+    if (this.writeStream) {
+      this.writeStream.end();
+      this.writeStream = undefined;
+    }
+
+    // Increment rotation count and create new file
+    this.intraDayRotationCount++;
+    this.currentLogFile = path.join(this.logDir, this.getLogFileName(this.currentDate, this.intraDayRotationCount));
+
+    // Open new stream
+    this.openWriteStream();
+    console.log(`📝 Intra-day log rotation: ${this.currentLogFile}`);
+  }
+
+  /**
+   * Cleanup log files older than retention period
+   */
+  private cleanupOldLogs() {
+    if (!this.logDir) return;
+
+    try {
+      const files = fs.readdirSync(this.logDir);
+      const now = new Date();
+      const cutoffDate = new Date(now.getTime() - this.retentionDays * 24 * 60 * 60 * 1000);
+
+      for (const file of files) {
+        // Match agent-YYYY-MM-DD.log or agent-YYYY-MM-DD.N.log pattern
+        const match = file.match(/^agent-(\d{4}-\d{2}-\d{2})(?:\.\d+)?\.log$/);
+        if (match) {
+          const fileDate = new Date(match[1]);
+          if (fileDate < cutoffDate) {
+            const filePath = path.join(this.logDir, file);
+            fs.unlinkSync(filePath);
+            console.log(`🗑️  Deleted old log: ${file}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to cleanup old logs:', error);
+    }
   }
 
   /**
@@ -157,7 +271,11 @@ class Logger {
   private writeToFile(message: string) {
     if (!this.writeStream || !this.logDir) return;
 
-    this.checkRotation();
+    // Check for daily rotation
+    this.checkDailyRotation();
+    // Check for size rotation
+    this.checkSizeRotation();
+
     this.writeStream.write(message + '\n');
   }
 
@@ -166,6 +284,20 @@ class Logger {
    */
   getLevel(): LogLevel {
     return this.level;
+  }
+
+  /**
+   * Get current log file path
+   */
+  getCurrentLogFile(): string | undefined {
+    return this.currentLogFile;
+  }
+
+  /**
+   * Get log directory
+   */
+  getLogDir(): string | undefined {
+    return this.logDir;
   }
 
   /**
@@ -215,7 +347,9 @@ class Logger {
   debug(message: string, ...args: any[]) {
     if (this.shouldLog('debug')) {
       const formatted = this.formatMessage('debug', message);
-      console.log(formatted, ...args);
+      if (this.logToConsole) {
+        console.log(formatted, ...args);
+      }
       this.writeToFile(formatted + this.formatArgs(args));
     }
   }
@@ -226,7 +360,9 @@ class Logger {
   info(message: string, ...args: any[]) {
     if (this.shouldLog('info')) {
       const formatted = this.formatMessage('info', message);
-      console.log(formatted, ...args);
+      if (this.logToConsole) {
+        console.log(formatted, ...args);
+      }
       this.writeToFile(formatted + this.formatArgs(args));
     }
   }
@@ -237,7 +373,9 @@ class Logger {
   warn(message: string, ...args: any[]) {
     if (this.shouldLog('warn')) {
       const formatted = this.formatMessage('warn', message);
-      console.warn(formatted, ...args);
+      if (this.logToConsole) {
+        console.warn(formatted, ...args);
+      }
       this.writeToFile(formatted + this.formatArgs(args));
     }
   }
@@ -248,7 +386,9 @@ class Logger {
   error(message: string, ...args: any[]) {
     if (this.shouldLog('error')) {
       const formatted = this.formatMessage('error', message);
-      console.error(formatted, ...args);
+      if (this.logToConsole) {
+        console.error(formatted, ...args);
+      }
       this.writeToFile(formatted + this.formatArgs(args));
     }
   }
@@ -257,7 +397,9 @@ class Logger {
    * Raw log without formatting (for special cases like status display)
    */
   raw(message: string) {
-    console.log(message);
+    if (this.logToConsole) {
+      console.log(message);
+    }
     this.writeToFile(message);
   }
 
@@ -271,7 +413,9 @@ class Logger {
     } else {
       formatted = `${prefix} ${message}`;
     }
-    console.log(formatted);
+    if (this.logToConsole) {
+      console.log(formatted);
+    }
     this.writeToFile(formatted);
   }
 
@@ -279,9 +423,39 @@ class Logger {
    * Close the logger (flush and close file stream)
    */
   close() {
+    if (this.rotationCheckInterval) {
+      clearInterval(this.rotationCheckInterval);
+      this.rotationCheckInterval = undefined;
+    }
     if (this.writeStream) {
       this.writeStream.end();
       this.writeStream = undefined;
+    }
+  }
+
+  /**
+   * List all log files
+   */
+  listLogFiles(): { name: string; size: number; date: string }[] {
+    if (!this.logDir) return [];
+
+    try {
+      const files = fs.readdirSync(this.logDir);
+      return files
+        .filter(f => f.match(/^agent-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.log$/))
+        .map(name => {
+          const filePath = path.join(this.logDir!, name);
+          const stats = fs.statSync(filePath);
+          const match = name.match(/^agent-(\d{4}-\d{2}-\d{2})/);
+          return {
+            name,
+            size: stats.size,
+            date: match ? match[1] : '',
+          };
+        })
+        .sort((a, b) => b.date.localeCompare(a.date));
+    } catch {
+      return [];
     }
   }
 }

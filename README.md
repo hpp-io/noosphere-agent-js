@@ -2,6 +2,12 @@
 
 A Noosphere agent with web dashboard for running decentralized compute tasks.
 
+Built with [@noosphere/sdk](https://www.npmjs.com/package/@noosphere/sdk) packages:
+- `@noosphere/agent-core` - Event monitoring, container execution, payload resolution
+- `@noosphere/contracts` - Type-safe contract interfaces
+- `@noosphere/crypto` - Keystore and wallet management
+- `@noosphere/registry` - Container and verifier discovery
+
 ## Prerequisites
 
 - Node.js >= 18.0.0
@@ -104,6 +110,27 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
 | `PAYMENT_ADDRESS` | Payment wallet address |
 | `PROOF_SERVICE_PRIVATE_KEY` | For verifiers with proof service (optional) |
 
+**Payload Storage (S3/R2):**
+
+| Variable | Description |
+|----------|-------------|
+| `R2_ENDPOINT` | S3-compatible endpoint URL |
+| `R2_BUCKET` | Bucket name |
+| `R2_ACCESS_KEY_ID` | Access key ID |
+| `R2_SECRET_ACCESS_KEY` | Secret access key |
+| `R2_PUBLIC_URL_BASE` | Public URL base for downloads |
+| `R2_REGION` | Region (default: auto) |
+| `R2_KEY_PREFIX` | Optional key prefix |
+
+**Payload Storage (IPFS/Pinata):**
+
+| Variable | Description |
+|----------|-------------|
+| `PINATA_API_KEY` | Pinata API key |
+| `PINATA_API_SECRET` | Pinata API secret |
+| `IPFS_GATEWAY` | IPFS gateway URL |
+| `IPFS_API_URL` | IPFS API URL (for local node) |
+
 ### Config File (`config.json`)
 
 ```json
@@ -121,12 +148,39 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
       "paymentAddress": "0xYourPaymentWallet"
     }
   },
+  "payload": {
+    "uploadThreshold": 1024,
+    "defaultStorage": "s3"
+  },
+  "containerExecution": {
+    "timeout": 180000,
+    "connectionRetries": 3,
+    "connectionRetryDelayMs": 1000
+  },
   "containers": [
     {
       "id": "0x2fe108c896fbbc20874ff97c7f230c6d06da1e60e731cbedae60125468f8333a",
       "name": "noosphere-hello-world",
       "image": "ghcr.io/hpp-io/example-hello-world-noosphere:latest",
       "port": "8081"
+    },
+    {
+      "id": "0x4548979e884d5d80117fbed9525e85279935318bdb71f8b73894cf7230686e93",
+      "name": "noosphere-llm",
+      "image": "ghcr.io/hpp-io/example-llm-noosphere:latest",
+      "port": "8082",
+      "env": {
+        "LLMROUTER_API_KEY": "${LLMROUTER_API_KEY}",
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    }
+  ],
+  "verifiers": [
+    {
+      "id": "immediate-finalize-verifier",
+      "name": "Immediate Finalize Verifier",
+      "address": "0x672c325941E3190838523052ebFF122146864EAd",
+      "requiresProof": false
     }
   ],
   "scheduler": {
@@ -142,6 +196,56 @@ npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
 ```
 
 Use `${VAR_NAME}` syntax for sensitive values - they are substituted at runtime from environment variables.
+
+## PayloadData (Large Input/Output Handling)
+
+The agent supports URI-based payload resolution for handling large inputs and outputs without storing them on-chain.
+
+### How It Works
+
+```
+┌─────────────────┐     ┌─────────────┐     ┌─────────────────┐
+│  Client         │     │  On-chain   │     │  Agent          │
+│                 │     │             │     │                 │
+│ 1. Upload to    │     │ PayloadData │     │ 3. Fetch from   │
+│    IPFS/R2      │────▶│ {           │────▶│    IPFS/R2      │
+│                 │     │   hash,     │     │                 │
+│ 2. Send URI     │     │   uri       │     │ 4. Process      │
+│    on-chain     │     │ }           │     │                 │
+└─────────────────┘     └─────────────┘     └─────────────────┘
+```
+
+### Supported URI Schemes
+
+| Scheme | Description | Use Case |
+|--------|-------------|----------|
+| `data:` | Inline base64-encoded | Small payloads (< threshold) |
+| `ipfs://` | IPFS content addressing | Decentralized storage |
+| `https://` | HTTP(S) URLs | R2, S3, any HTTP storage |
+
+### Configuration
+
+```json
+{
+  "payload": {
+    "uploadThreshold": 1024,
+    "defaultStorage": "s3"
+  }
+}
+```
+
+- `uploadThreshold`: Size in bytes above which outputs are uploaded to external storage (default: 1024)
+- `defaultStorage`: Where to upload large outputs - `"s3"` (R2/S3), `"ipfs"`, or `"data"` (inline)
+
+### Storage Options
+
+**S3/R2 (Recommended for outputs):**
+- Fast, reliable, cost-effective
+- Requires: `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL_BASE`
+
+**IPFS/Pinata (Common for inputs):**
+- Decentralized, content-addressed
+- Requires: `PINATA_API_KEY`, `PINATA_API_SECRET`, `IPFS_GATEWAY`
 
 ## Useful Commands
 

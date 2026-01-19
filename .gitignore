@@ -40,9 +40,12 @@ next-env.d.ts
 config.test.json
 *.keystore.json
 config.json
+config.local.json
+config.anvil.json
 config-e2e.json
 agents.json
 docker/config.docker.json
+docker/config.docker.anvil.json
 *.db
 *.db-shm
 *.db-wal
