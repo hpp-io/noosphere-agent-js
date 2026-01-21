@@ -91,11 +91,31 @@ interface SchedulerStatus {
   nextRun: string;
 }
 
+interface HealthStatus {
+  status: string;
+  healthy: boolean;
+  timestamp: number;
+  uptime: number;
+  memory: {
+    heapUsed: number;
+    heapTotal: number;
+  };
+  agents: {
+    total: number;
+    running: number;
+  };
+  connection: {
+    mode: string;
+    state: string;
+  };
+}
+
 export default function Dashboard() {
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [containers, setContainers] = useState<ContainersResponse | null>(null);
   const [verifiers, setVerifiers] = useState<VerifiersResponse | null>(null);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,6 +153,13 @@ export default function Dashboard() {
         if (schedulerRes.ok) {
           const schedulerData = await schedulerRes.json();
           setScheduler(schedulerData);
+        }
+
+        // Fetch health status
+        const healthRes = await apiFetch('/api/health');
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          setHealth(healthData);
         }
       } catch (err) {
         setError((err as Error).message);
@@ -178,9 +205,43 @@ export default function Dashboard() {
       <header className="bg-white dark:bg-gray-800 shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Noosphere Agent Dashboard
-            </h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Noosphere Agent Dashboard
+              </h1>
+              {/* Connection Status Badge */}
+              {health && (
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                      health.healthy
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                        : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full mr-2 ${
+                        health.healthy ? 'bg-green-500' : 'bg-red-500'
+                      }`}
+                    ></span>
+                    {health.healthy ? 'Healthy' : 'Unhealthy'}
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                      health.connection.mode === 'websocket'
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                        : health.connection.mode === 'http_polling'
+                        ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                    }`}
+                  >
+                    {health.connection.mode === 'websocket' && '🔌 WebSocket'}
+                    {health.connection.mode === 'http_polling' && '🔄 HTTP Polling'}
+                    {health.connection.mode === 'connecting' && '⏳ Connecting'}
+                  </span>
+                </div>
+              )}
+            </div>
             <nav className="flex gap-4">
               <a
                 href="/history"

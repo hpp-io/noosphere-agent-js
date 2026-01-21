@@ -15,6 +15,10 @@ export interface AgentInstanceStatus {
     activeSubscriptions: number;
     pendingTransactions: number;
   };
+  connection?: {
+    state: string;
+    mode: 'websocket' | 'http_polling' | 'connecting';
+  };
   error?: string;
   startedAt?: number;
   lastActiveAt?: number;

@@ -43,6 +43,8 @@ const createMockNoosphereAgent = () => ({
       pendingTransactions: 0,
     },
   }),
+  getConnectionState: vi.fn().mockReturnValue('WS_ACTIVE'),
+  getConnectionMode: vi.fn().mockReturnValue('websocket'),
 });
 
 // Store the mock for access in tests

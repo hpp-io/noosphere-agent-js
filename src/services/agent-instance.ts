@@ -330,6 +330,10 @@ export class AgentInstance extends EventEmitter {
         activeSubscriptions: agentStatus?.scheduler.activeSubscriptions ?? 0,
         pendingTransactions: agentStatus?.scheduler.pendingTransactions ?? 0,
       },
+      connection: {
+        state: this.noosphereAgent?.getConnectionState() ?? 'INIT',
+        mode: this.noosphereAgent?.getConnectionMode() ?? 'connecting',
+      },
       error: this.errorMessage,
       startedAt: this.startedAt,
       lastActiveAt: this.lastActiveAt,

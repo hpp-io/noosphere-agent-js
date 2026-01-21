@@ -22,10 +22,25 @@ export class AgentManager extends EventEmitter {
         continue;
       }
 
-      try {
-        await this.createAgent(config);
-      } catch (error) {
-        logger.error(`[${config.id}] Failed to create agent: ${(error as Error).message}`);
+      // Retry logic for agent creation
+      const maxRetries = 3;
+      const retryDelayMs = 10000; // 10 seconds
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await this.createAgent(config);
+          break; // Success, exit retry loop
+        } catch (error) {
+          const errorMessage = (error as Error).message;
+          logger.error(`[${config.id}] Failed to create agent (attempt ${attempt}/${maxRetries}): ${errorMessage}`);
+
+          if (attempt < maxRetries) {
+            logger.info(`[${config.id}] Retrying in ${retryDelayMs / 1000} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+          } else {
+            logger.error(`[${config.id}] All ${maxRetries} attempts failed. Agent will not start.`);
+          }
+        }
       }
     }
   }

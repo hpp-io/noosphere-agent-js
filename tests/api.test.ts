@@ -8,9 +8,31 @@ describe('API Endpoints', () => {
       const res = await request(app).get('/api/health');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('status', 'ok');
+      // Status is 'ok' when agents running, 'degraded' when no agents
+      expect(['ok', 'degraded']).toContain(res.body.status);
       expect(res.body).toHaveProperty('timestamp');
       expect(typeof res.body.timestamp).toBe('number');
+      // Should include agents info
+      expect(res.body).toHaveProperty('agents');
+      expect(res.body.agents).toHaveProperty('total');
+      expect(res.body.agents).toHaveProperty('running');
+      // Should include healthy field (Step 4)
+      expect(res.body).toHaveProperty('healthy');
+      expect(typeof res.body.healthy).toBe('boolean');
+      // Should include connection info (Step 4)
+      expect(res.body).toHaveProperty('connection');
+      expect(res.body.connection).toHaveProperty('mode');
+      expect(res.body.connection).toHaveProperty('state');
+    });
+
+    it('should return healthy:false when no agents running', async () => {
+      const res = await request(app).get('/api/health');
+
+      // In test environment, no agents are running
+      if (res.body.agents.running === 0) {
+        expect(res.body.healthy).toBe(false);
+        expect(res.body.status).toBe('degraded');
+      }
     });
   });
 
@@ -128,6 +150,33 @@ describe('API Endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('verifiers');
       expect(Array.isArray(res.body.verifiers)).toBe(true);
+    });
+  });
+
+  describe('GET /api/metrics', () => {
+    it('should return metrics in JSON format', async () => {
+      const res = await request(app).get('/api/metrics');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('wsConnections');
+      expect(res.body).toHaveProperty('requestsProcessed');
+      expect(res.body).toHaveProperty('agentStarts');
+      expect(res.body).toHaveProperty('uncaughtExceptions');
+      expect(res.body).toHaveProperty('startedAt');
+      expect(typeof res.body.startedAt).toBe('number');
+    });
+  });
+
+  describe('GET /api/metrics/prometheus', () => {
+    it('should return metrics in Prometheus format', async () => {
+      const res = await request(app).get('/api/metrics/prometheus');
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/plain');
+      expect(res.text).toContain('noosphere_agent_info');
+      expect(res.text).toContain('noosphere_ws_connections_total');
+      expect(res.text).toContain('noosphere_requests_processed_total');
+      expect(res.text).toContain('noosphere_uptime_seconds');
     });
   });
 });

@@ -156,13 +156,30 @@ class Logger {
     if (!this.currentLogFile) return;
 
     if (this.writeStream) {
-      this.writeStream.end();
+      try {
+        this.writeStream.end();
+      } catch {
+        // Ignore errors when closing old stream
+      }
     }
 
-    this.writeStream = fs.createWriteStream(this.currentLogFile, { flags: 'a' });
-    this.writeStream.on('error', (error) => {
-      console.error('Log file write error:', error);
-    });
+    try {
+      this.writeStream = fs.createWriteStream(this.currentLogFile, { flags: 'a' });
+      this.writeStream.on('error', (error) => {
+        console.error('Log file write error:', error);
+        // Try to recover by reopening the stream
+        this.writeStream = undefined;
+        setTimeout(() => {
+          if (!this.writeStream && this.currentLogFile) {
+            console.log('Attempting to recover log file stream...');
+            this.openWriteStream();
+          }
+        }, 1000);
+      });
+    } catch (error) {
+      console.error('Failed to open log file stream:', error);
+      this.writeStream = undefined;
+    }
   }
 
   /**
@@ -181,23 +198,31 @@ class Logger {
   private rotateToDailyLog(newDate: string) {
     if (!this.logDir) return;
 
-    // Close current stream
-    if (this.writeStream) {
-      this.writeStream.end();
-      this.writeStream = undefined;
+    try {
+      // Close current stream
+      if (this.writeStream) {
+        try {
+          this.writeStream.end();
+        } catch {
+          // Ignore errors when closing old stream
+        }
+        this.writeStream = undefined;
+      }
+
+      // Update to new date
+      this.currentDate = newDate;
+      this.intraDayRotationCount = 0;
+      this.currentLogFile = path.join(this.logDir, this.getLogFileName(newDate));
+
+      // Open new stream
+      this.openWriteStream();
+      console.log(`📝 Daily log rotation: ${this.currentLogFile}`);
+
+      // Cleanup old logs
+      this.cleanupOldLogs();
+    } catch (error) {
+      console.error('Failed to rotate daily log:', error);
     }
-
-    // Update to new date
-    this.currentDate = newDate;
-    this.intraDayRotationCount = 0;
-    this.currentLogFile = path.join(this.logDir, this.getLogFileName(newDate));
-
-    // Open new stream
-    this.openWriteStream();
-    console.log(`📝 Daily log rotation: ${this.currentLogFile}`);
-
-    // Cleanup old logs
-    this.cleanupOldLogs();
   }
 
   /**
@@ -269,14 +294,27 @@ class Logger {
    * Write to log file
    */
   private writeToFile(message: string) {
-    if (!this.writeStream || !this.logDir) return;
+    if (!this.logDir) return;
 
     // Check for daily rotation
     this.checkDailyRotation();
     // Check for size rotation
     this.checkSizeRotation();
 
-    this.writeStream.write(message + '\n');
+    // If stream is not available, try to reopen it
+    if (!this.writeStream) {
+      this.openWriteStream();
+    }
+
+    // Write to stream if available
+    if (this.writeStream) {
+      try {
+        this.writeStream.write(message + '\n');
+      } catch (error) {
+        console.error('Error writing to log file:', error);
+        this.writeStream = undefined;
+      }
+    }
   }
 
   /**

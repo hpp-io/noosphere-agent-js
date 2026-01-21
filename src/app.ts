@@ -7,6 +7,7 @@ import { JsonRpcProvider } from 'ethers';
 import { ethers } from 'ethers';
 import { RegistryManager, KeystoreManager } from '@noosphere/agent-core';
 import { getAgentManager } from './services/agent-manager';
+import { getMetrics } from './services/metrics';
 import { getDatabase } from '../lib/db';
 import { loadConfig } from '../lib/config';
 import { logger } from '../lib/logger';
@@ -118,7 +119,49 @@ function serializeForJson(obj: any): any {
 // ============================================================================
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
+  try {
+    const manager = getAgentManager();
+    const status = manager.getStatus();
+    const mem = process.memoryUsage();
+
+    // Determine health status
+    const healthy = status.runningAgents >= 1;
+
+    // Get connection info from first running agent
+    let connectionInfo: { mode: string; state: string } = {
+      mode: 'connecting',
+      state: 'INIT',
+    };
+    if (status.agents.length > 0 && status.agents[0].connection) {
+      connectionInfo = {
+        mode: status.agents[0].connection.mode,
+        state: status.agents[0].connection.state,
+      };
+    }
+
+    res.json({
+      status: healthy ? 'ok' : 'degraded',
+      healthy,
+      timestamp: Date.now(),
+      uptime: Math.round(process.uptime()),
+      memory: {
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      agents: {
+        total: status.totalAgents,
+        running: status.runningAgents,
+      },
+      connection: connectionInfo,
+    });
+  } catch (error) {
+    res.json({
+      status: 'error',
+      healthy: false,
+      timestamp: Date.now(),
+      error: (error as Error).message,
+    });
+  }
 });
 
 // Agent wallet status (replaces /api/agent/status)
@@ -316,25 +359,35 @@ app.get('/api/verifiers', async (_req, res) => {
     const config = loadConfig();
     const registry = await getGlobalRegistry();
 
+    // Registry contains all available verifiers (reference list)
     const registryVerifiers = registry.listVerifiers();
-    const configVerifiers = config.verifiers?.map((v: any) => ({
-      id: v.id, name: v.name, verifierAddress: v.address, requiresProof: v.requiresProof,
-      proofService: v.proofService ? {
-        imageName: v.proofService.image, port: v.proofService.port,
-        command: v.proofService.command, env: v.proofService.env,
-      } : undefined,
-      verified: v.verified, description: v.description, payments: {},
-    })) || [];
+    const registryVerifierMap = new Map<string, any>();
+    registryVerifiers.forEach((v: any) => registryVerifierMap.set(v.id, v));
 
-    const verifierMap = new Map();
-    registryVerifiers.forEach((v: any) => verifierMap.set(v.id, {
-      id: v.id, name: v.name, verifierAddress: v.verifierAddress,
-      requiresProof: v.requiresProof, proofService: v.proofService,
-      verified: v.verified, description: v.description, payments: v.payments,
-    }));
-    configVerifiers.forEach((v: any) => verifierMap.set(v.id, v));
+    // Config specifies which verifiers this agent supports
+    // Validate against registry and return only valid ones
+    const configVerifierIds = config.verifiers?.map((v: any) => v.id) || [];
 
-    res.json({ verifiers: Array.from(verifierMap.values()) });
+    const validVerifiers = configVerifierIds
+      .filter((id: string) => registryVerifierMap.has(id))
+      .map((id: string) => {
+        const registryVerifier = registryVerifierMap.get(id);
+        const configVerifier = config.verifiers?.find((v: any) => v.id === id);
+
+        // Merge registry info with any config overrides
+        return {
+          id: registryVerifier.id,
+          name: registryVerifier.name,
+          verifierAddress: configVerifier?.address || registryVerifier.verifierAddress,
+          requiresProof: configVerifier?.requiresProof ?? registryVerifier.requiresProof,
+          proofService: registryVerifier.proofService,
+          verified: registryVerifier.verified,
+          description: registryVerifier.description,
+          payments: registryVerifier.payments,
+        };
+      });
+
+    res.json({ verifiers: validVerifiers });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -463,6 +516,31 @@ app.get('/api/stats', (_req, res) => {
 });
 
 // ============================================================================
+// Metrics API (Step 8)
+// ============================================================================
+
+// JSON format metrics
+app.get('/api/metrics', (_req, res) => {
+  try {
+    const metrics = getMetrics();
+    res.json(metrics.getMetrics());
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Prometheus format metrics
+app.get('/api/metrics/prometheus', (_req, res) => {
+  try {
+    const metrics = getMetrics();
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.send(metrics.toPrometheus());
+  } catch (error) {
+    res.status(500).send(`# Error: ${(error as Error).message}`);
+  }
+});
+
+// ============================================================================
 // WebSocket handlers
 // ============================================================================
 
@@ -500,22 +578,49 @@ async function start() {
     });
   }
 
+  // Global error handlers to prevent silent crashes
+  const metrics = getMetrics();
+
+  process.on('uncaughtException', (error) => {
+    metrics.increment('uncaughtExceptions');
+    logger.error(`Uncaught Exception: ${error.message}`);
+    logger.error(`Stack: ${error.stack}`);
+    console.error('Uncaught Exception:', error);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    metrics.increment('unhandledRejections');
+    const message = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    logger.error(`Unhandled Rejection: ${message}`);
+    if (stack) logger.error(`Stack: ${stack}`);
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  });
+
   try {
     const manager = getAgentManager();
 
-    // Forward events to WebSocket (serialize BigInt to string)
+    // Forward events to WebSocket (serialize BigInt to string) and track metrics
     manager.on('requestStarted', (data) => {
+      metrics.increment('requestsProcessed');
       const serialized = serializeForJson(data);
       io.to(`agent-${data.agentId}`).emit('requestStarted', serialized);
       io.emit('requestStarted', serialized);
     });
     manager.on('computeDelivered', (data) => {
+      metrics.increment('requestsSucceeded');
       const serialized = serializeForJson(data);
       io.to(`agent-${data.agentId}`).emit('computeDelivered', serialized);
       io.emit('computeDelivered', serialized);
     });
-    manager.on('agentStarted', (data) => io.emit('agentStarted', serializeForJson(data)));
-    manager.on('agentStopped', (data) => io.emit('agentStopped', serializeForJson(data)));
+    manager.on('agentStarted', (data) => {
+      metrics.increment('agentStarts');
+      io.emit('agentStarted', serializeForJson(data));
+    });
+    manager.on('agentStopped', (data) => {
+      metrics.increment('agentStops');
+      io.emit('agentStopped', serializeForJson(data));
+    });
 
     await manager.startFromConfig();
 
@@ -524,12 +629,49 @@ async function start() {
       logger.info('WebSocket ready');
     });
 
-    // Status logging
-    setInterval(() => {
-      const status = manager.getStatus();
-      const db = getDatabase();
-      const eventStats = db.getEventStats();
-      console.log(`\n📊 [${new Date().toISOString()}] Agents: ${status.runningAgents}/${status.totalAgents}, Events: ${eventStats.total} (✓${eventStats.completed})`);
+    // Status logging with error handling and auto-recovery
+    let statusLogCount = 0;
+    let lastRecoveryAttempt = 0;
+    const recoveryIntervalMs = 5 * 60 * 1000; // 5 minutes between recovery attempts
+
+    setInterval(async () => {
+      try {
+        statusLogCount++;
+        const status = manager.getStatus();
+        const db = getDatabase();
+        const eventStats = db.getEventStats();
+        const mem = process.memoryUsage();
+        const memMB = Math.round(mem.heapUsed / 1024 / 1024);
+        const uptime = Math.round(process.uptime() / 60);
+
+        // Log memory every 10 intervals (5 minutes) or if agents count is 0
+        const showMemory = statusLogCount % 10 === 0 || status.totalAgents === 0;
+        const memInfo = showMemory ? `, Mem: ${memMB}MB, Up: ${uptime}m` : '';
+
+        console.log(`\n📊 [${new Date().toISOString()}] Agents: ${status.runningAgents}/${status.totalAgents}, Events: ${eventStats.total} (✓${eventStats.completed})${memInfo}`);
+
+        // Auto-recovery: If no agents are running, try to restart them
+        if (status.totalAgents === 0) {
+          const now = Date.now();
+          if (now - lastRecoveryAttempt > recoveryIntervalMs) {
+            lastRecoveryAttempt = now;
+            logger.warn('No agents running! Attempting auto-recovery...');
+            try {
+              await manager.startFromConfig();
+              const newStatus = manager.getStatus();
+              if (newStatus.totalAgents > 0) {
+                logger.info(`Auto-recovery successful: ${newStatus.runningAgents} agents running`);
+              }
+            } catch (recoveryError) {
+              logger.error(`Auto-recovery failed: ${(recoveryError as Error).message}`);
+            }
+          }
+        } else if (status.runningAgents === 0) {
+          logger.warn('All agents stopped unexpectedly!');
+        }
+      } catch (error) {
+        console.error(`Status log error: ${(error as Error).message}`);
+      }
     }, 30000);
 
     // Graceful shutdown
