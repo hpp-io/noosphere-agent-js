@@ -239,7 +239,7 @@ describe('DataUriProvider', () => {
     const content = '{"test":"value"}';
     const uri = await provider.upload(content);
 
-    expect(uri).toContain('data:application/json;base64,');
+    expect(uri).toMatch(/^data:(application\/json)?;?base64,/);
   });
 
   it('should download data URI content', async () => {

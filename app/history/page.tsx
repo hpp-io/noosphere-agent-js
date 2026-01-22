@@ -15,7 +15,6 @@ interface HistoryEntry {
   timestamp: number;
   transactionHash: string;
   containerId: string;
-  redundancy: number;
   feeAmount: string;
   feeToken: string;
   gasFee: string;
@@ -36,6 +35,8 @@ interface HistoryResponse {
   history: HistoryEntry[];
 }
 
+type FeeUnit = 'auto' | 'gwei' | 'eth';
+
 export default function HistoryPage() {
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,7 @@ export default function HistoryPage() {
   const [limit] = useState(20);
   const [selectedEntry, setSelectedEntry] = useState<HistoryEntry | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [feeUnit, setFeeUnit] = useState<FeeUnit>('auto');
 
   const statusOptions = [
     { value: 'all', label: 'All' },
@@ -101,15 +103,30 @@ export default function HistoryPage() {
     return address.substring(0, 6) + '...' + address.substring(address.length - 4);
   };
 
-  const formatWei = (weiString: string): { value: string; unit: string } => {
+  const formatWei = (weiString: string, unit: FeeUnit = feeUnit): { value: string; unit: string } => {
     try {
       const wei = BigInt(weiString || '0');
 
       if (wei === 0n) {
-        return { value: '0', unit: 'gwei' };
+        return { value: '0', unit: unit === 'eth' ? 'ETH' : 'gwei' };
       }
 
-      // Use gwei as default, only use wei for very small amounts
+      // If user selected a specific unit, use it
+      if (unit === 'eth') {
+        const eth = formatUnits(weiString, 18);
+        const ethNum = Number(eth);
+        const decimals = ethNum < 0.0001 ? 8 : ethNum < 0.01 ? 6 : 4;
+        return { value: ethNum.toFixed(decimals), unit: 'ETH' };
+      }
+
+      if (unit === 'gwei') {
+        const gwei = formatUnits(weiString, 9);
+        const gweiNum = Number(gwei);
+        const decimals = gweiNum < 0.0001 ? 8 : gweiNum < 0.01 ? 6 : 4;
+        return { value: gweiNum.toFixed(decimals), unit: 'gwei' };
+      }
+
+      // Auto mode: use gwei as default, only use wei for very small amounts
       const absWei = wei < 0n ? -wei : wei;
 
       if (absWei >= BigInt('100')) {
@@ -124,7 +141,7 @@ export default function HistoryPage() {
         return { value: wei.toString(), unit: 'wei' };
       }
     } catch (e) {
-      return { value: '0', unit: 'gwei' };
+      return { value: '0', unit: unit === 'eth' ? 'ETH' : 'gwei' };
     }
   };
 
@@ -209,6 +226,22 @@ export default function HistoryPage() {
               >
                 Prepare History
               </Link>
+              {/* Fee Unit Selector */}
+              <div>
+                <label htmlFor="fee-unit" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                  Fee Unit
+                </label>
+                <select
+                  id="fee-unit"
+                  value={feeUnit}
+                  onChange={(e) => setFeeUnit(e.target.value as FeeUnit)}
+                  className="block w-24 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="gwei">Gwei</option>
+                  <option value="eth">ETH</option>
+                </select>
+              </div>
               {/* Status Filter */}
               <div>
                 <label htmlFor="status-filter" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
