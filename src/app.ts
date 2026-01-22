@@ -429,7 +429,6 @@ app.get('/api/history', async (req, res) => {
       timestamp: Math.floor(event.timestamp / 1000),
       transactionHash: event.tx_hash,
       containerId: event.container_id,
-      redundancy: event.redundancy,
       feeAmount: event.fee_amount,
       feeToken: event.fee_token,
       gasFee: event.gas_fee,

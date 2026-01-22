@@ -171,7 +171,6 @@ async function main() {
           interval: Number(commitment.interval),
           block_number: event.blockNumber || 0,
           container_id: eventLog.args.containerId,
-          redundancy: Number(commitment.redundancy),
           fee_amount: commitment.feeAmount.toString(),
           fee_token: commitment.feeToken,
           verifier: commitment.verifier,

@@ -22,7 +22,7 @@
     "retryIntervalMs": 5000
   },
   "payload": {
-    "uploadThreshold": 1024,
+    "uploadThreshold": 256,
     "defaultStorage": "s3"
   },
   "containerExecution": {

@@ -35,6 +35,7 @@ next-env.d.ts
 
 # noosphere
 .noosphere/
+.noosphere-v2/
 .noosphere-e2e/
 .noosphere-test/
 config.test.json
@@ -42,6 +43,7 @@ config.test.json
 config.json
 config.local.json
 config.anvil.json
+config.v2.json
 config-e2e.json
 agents.json
 docker/config.docker.json

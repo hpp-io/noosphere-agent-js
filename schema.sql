@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS events (
     tx_hash TEXT UNIQUE,
 
     -- Configuration
-    redundancy INTEGER NOT NULL,
     fee_amount TEXT NOT NULL,
     fee_token TEXT NOT NULL,
     verifier TEXT,
     wallet_address TEXT,
+    verifier_fee TEXT,
 
     -- Results (filled after delivery)
     gas_fee TEXT,

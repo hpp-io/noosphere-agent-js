@@ -30,12 +30,12 @@ loadEnv();
 
 // ABIs
 const CLIENT_ABI = [
-  "function createSubscription(string containerId, uint16 redundancy, bool useInbox, address paymentToken, uint256 feeAmount, address wallet, address verifier, bytes32 routeId) external returns (uint64)",
+  "function createSubscription(string containerId, bool useInbox, address paymentToken, uint256 feeAmount, address wallet, address verifier, bytes32 routeId) external returns (uint64)",
   "function requestCompute(uint64 subscriptionId, bytes data) external"
 ];
 
 const SCHEDULED_CLIENT_ABI = [
-  "function createComputeSubscription(string containerId, uint32 maxExecutions, uint32 intervalSeconds, uint16 redundancy, bool useDeliveryInbox, address feeToken, uint256 feeAmount, address wallet, address verifier, bytes32 routeId) external returns (uint64)",
+  "function createComputeSubscription(string containerId, uint32 maxExecutions, uint32 intervalSeconds, bool useDeliveryInbox, address feeToken, uint256 feeAmount, address wallet, address verifier, bytes32 routeId) external returns (uint64)",
   "function getComputeInputs(uint64 subscriptionId, uint32 interval, uint32 timestamp, address caller) external view returns (bytes)"
 ];
 
@@ -50,7 +50,6 @@ interface RequestConfig {
   data?: string;
   maxExecutions?: number;
   intervalSeconds?: number;
-  redundancy?: number;
   useInbox?: boolean;
   feeAmount?: string;
 }
@@ -97,7 +96,6 @@ async function sendOneTimeRequest(
   console.log('📝 Creating subscription...');
   const createTx = await client.createSubscription(
     config.containerId,
-    config.redundancy || 1,
     config.useInbox || false,
     ethers.ZeroAddress,
     config.feeAmount || '100',
@@ -169,7 +167,6 @@ async function sendScheduledRequest(
     config.containerId,
     config.maxExecutions || 3,
     config.intervalSeconds || 180,
-    config.redundancy || 1,
     config.useInbox || false,
     ethers.ZeroAddress,
     config.feeAmount || '100',
@@ -222,7 +219,6 @@ async function main() {
     data: process.env.REQUEST_DATA,
     maxExecutions: process.env.MAX_EXECUTIONS ? parseInt(process.env.MAX_EXECUTIONS) : undefined,
     intervalSeconds: process.env.INTERVAL_SECONDS ? parseInt(process.env.INTERVAL_SECONDS) : undefined,
-    redundancy: process.env.REDUNDANCY ? parseInt(process.env.REDUNDANCY) : undefined,
     useInbox: process.env.USE_INBOX === 'true',
     feeAmount: process.env.FEE_AMOUNT,
   };

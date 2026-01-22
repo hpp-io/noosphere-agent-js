@@ -25,11 +25,11 @@ export interface EventRecord {
   timestamp: number;
   tx_hash?: string;
   container_id: string;
-  redundancy: number;
   fee_amount: string;
   fee_token: string;
   verifier?: string;
   wallet_address?: string;
+  verifier_fee?: string;
   gas_fee?: string;
   fee_earned?: string;
   is_penalty: boolean;
@@ -48,11 +48,11 @@ export interface RequestStartedEventInput {
   interval: number;
   block_number: number;
   container_id: string;
-  redundancy: number;
   fee_amount: string;
   fee_token: string;
   verifier?: string;
   wallet_address?: string;
+  verifier_fee?: string;
 }
 
 export interface PaginatedResult<T> {
@@ -162,7 +162,6 @@ export class AgentDatabase {
           timestamp INTEGER NOT NULL,
           tx_hash TEXT NOT NULL UNIQUE,
           container_id TEXT NOT NULL,
-          redundancy INTEGER NOT NULL,
           fee_amount TEXT NOT NULL,
           fee_token TEXT NOT NULL,
           verifier TEXT,
@@ -203,6 +202,20 @@ export class AgentDatabase {
     } catch (error) {
       // Column might already exist or table doesn't exist yet
     }
+
+    // Migration: Add verifier_fee column to events table
+    try {
+      const hasVerifierFee = this.db
+        .prepare("SELECT COUNT(*) as count FROM pragma_table_info('events') WHERE name = 'verifier_fee'")
+        .get() as { count: number };
+
+      if (hasVerifierFee.count === 0) {
+        this.db.exec('ALTER TABLE events ADD COLUMN verifier_fee TEXT');
+        console.log('✓ Migration: Added verifier_fee column to events table');
+      }
+    } catch (error) {
+      // Column might already exist or table doesn't exist yet
+    }
   }
 
   // ==================== Events ====================
@@ -224,8 +237,8 @@ export class AgentDatabase {
       const stmt = this.db.prepare(`
         INSERT INTO events (
           request_id, subscription_id, interval, block_number,
-          timestamp, container_id, redundancy,
-          fee_amount, fee_token, verifier, wallet_address,
+          timestamp, container_id,
+          fee_amount, fee_token, verifier, wallet_address, verifier_fee,
           status, is_penalty
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
       `);
@@ -237,11 +250,11 @@ export class AgentDatabase {
         event.block_number || 0, // WebSocket events may not have block_number
         timestamp,
         event.container_id,
-        event.redundancy || 1,
         event.fee_amount || '0',
         event.fee_token || '0x0000000000000000000000000000000000000000',
         event.verifier || null,
-        event.wallet_address || null
+        event.wallet_address || null,
+        event.verifier_fee || '0'
       );
 
       return result.changes > 0;
@@ -370,11 +383,11 @@ export class AgentDatabase {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO events (
         request_id, subscription_id, interval, block_number,
-        timestamp, tx_hash, container_id, redundancy,
+        timestamp, tx_hash, container_id,
         fee_amount, fee_token, verifier, wallet_address,
         gas_fee, fee_earned, is_penalty, status, error_message,
         input, output
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -385,7 +398,6 @@ export class AgentDatabase {
       event.timestamp,
       event.tx_hash || null,
       event.container_id,
-      event.redundancy,
       event.fee_amount,
       event.fee_token,
       event.verifier || null,
@@ -407,11 +419,11 @@ export class AgentDatabase {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO events (
         request_id, subscription_id, interval, block_number,
-        timestamp, tx_hash, container_id, redundancy,
+        timestamp, tx_hash, container_id,
         fee_amount, fee_token, verifier, wallet_address,
         gas_fee, fee_earned, is_penalty, status, error_message,
         input, output
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = this.db.transaction((events: EventRecord[]) => {
@@ -424,7 +436,6 @@ export class AgentDatabase {
           event.timestamp,
           event.tx_hash || null,
           event.container_id,
-          event.redundancy,
           event.fee_amount,
           event.fee_token,
           event.verifier || null,

@@ -27,7 +27,6 @@ class TestDatabase {
         timestamp INTEGER NOT NULL,
         tx_hash TEXT UNIQUE,
         container_id TEXT NOT NULL,
-        redundancy INTEGER NOT NULL DEFAULT 1,
         fee_amount TEXT NOT NULL DEFAULT '0',
         fee_token TEXT NOT NULL DEFAULT '0x0000000000000000000000000000000000000000',
         verifier TEXT,
@@ -99,10 +98,10 @@ class TestDatabase {
       const stmt = this.db.prepare(`
         INSERT INTO events (
           request_id, subscription_id, interval, block_number,
-          timestamp, container_id, redundancy,
+          timestamp, container_id,
           fee_amount, fee_token, verifier, wallet_address,
           status, is_penalty
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)
       `);
       const result = stmt.run(
         event.request_id,
@@ -111,7 +110,6 @@ class TestDatabase {
         event.block_number || 0,
         Date.now(),
         event.container_id,
-        event.redundancy || 1,
         event.fee_amount || '0',
         event.fee_token || '0x0000000000000000000000000000000000000000',
         event.verifier || null,
@@ -474,7 +472,6 @@ describe('AgentDatabase', () => {
       interval: 100,
       block_number: 1000,
       container_id: '0xcontainer',
-      redundancy: 1,
       fee_amount: '1000000000000000000',
       fee_token: '0x0000000000000000000000000000000000000000',
     };

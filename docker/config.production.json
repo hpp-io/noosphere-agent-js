@@ -1,4 +1,8 @@
 {
+  "payload": {
+    "defaultStorage": "s3",
+    "uploadThreshold": 256
+  },
   "chain": {
     "enabled": true,
     "rpcUrl": "https://sepolia.hpp.io",

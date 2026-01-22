@@ -121,6 +121,10 @@ export class AgentInstance extends EventEmitter {
           // Container execution configuration
           containerConfig: this.config.containerExecution,
 
+          // Gas optimization: access list disabled for Arbitrum L2
+          // Access lists increase calldata size which is expensive on L2 (L1 posting cost)
+          // useAccessList: true,
+
           // Payload encoder for IPFS upload (uses PayloadResolver)
           payloadEncoder: async (content: string) => {
             console.log(`  🔄 payloadEncoder called, content length: ${content.length}`);
@@ -147,11 +151,11 @@ export class AgentInstance extends EventEmitter {
               interval: event.interval,
               block_number: event.blockNumber,
               container_id: event.containerId,
-              redundancy: event.redundancy,
               fee_amount: event.feeAmount,
               fee_token: event.feeToken,
               verifier: event.verifier,
               wallet_address: event.walletAddress,
+              verifier_fee: event.verifierFee,
             });
             if (saved) {
               logger.info(`[${this.id}] RequestStarted: ${event.requestId.slice(0, 10)}...`);
@@ -274,8 +278,8 @@ export class AgentInstance extends EventEmitter {
               walletAddress: e.wallet_address || '0x0000000000000000000000000000000000000000',
               verifier: e.verifier || '0x0000000000000000000000000000000000000000',
               coordinator: this.config.chain.coordinatorAddress,
-              redundancy: e.redundancy || 1,
               useDeliveryInbox: false,
+              verifierFee: e.verifier_fee || '0',
             }));
           },
 
