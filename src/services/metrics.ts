@@ -27,6 +27,10 @@ export interface MetricsData {
   requestsFailed: number;
   requestsSkipped: number;
 
+  // VRF / Epoch metrics
+  epochsRegistered: number;
+  epochRegistrationFailures: number;
+
   // Error metrics
   uncaughtExceptions: number;
   unhandledRejections: number;
@@ -55,6 +59,10 @@ class MetricsCollector {
     requestsSucceeded: 0,
     requestsFailed: 0,
     requestsSkipped: 0,
+
+    // VRF / Epoch metrics
+    epochsRegistered: 0,
+    epochRegistrationFailures: 0,
 
     // Error metrics
     uncaughtExceptions: 0,
@@ -139,6 +147,14 @@ class MetricsCollector {
       '# TYPE noosphere_requests_skipped_total counter',
       `noosphere_requests_skipped_total ${this.metrics.requestsSkipped}`,
       '',
+      '# HELP noosphere_epochs_registered_total Total VRF epochs registered',
+      '# TYPE noosphere_epochs_registered_total counter',
+      `noosphere_epochs_registered_total ${this.metrics.epochsRegistered}`,
+      '',
+      '# HELP noosphere_epoch_registration_failures_total Total VRF epoch registration failures',
+      '# TYPE noosphere_epoch_registration_failures_total counter',
+      `noosphere_epoch_registration_failures_total ${this.metrics.epochRegistrationFailures}`,
+      '',
       '# HELP noosphere_uncaught_exceptions_total Total uncaught exceptions',
       '# TYPE noosphere_uncaught_exceptions_total counter',
       `noosphere_uncaught_exceptions_total ${this.metrics.uncaughtExceptions}`,
@@ -172,6 +188,8 @@ class MetricsCollector {
       requestsSucceeded: 0,
       requestsFailed: 0,
       requestsSkipped: 0,
+      epochsRegistered: 0,
+      epochRegistrationFailures: 0,
       uncaughtExceptions: 0,
       unhandledRejections: 0,
       startedAt: Date.now(),

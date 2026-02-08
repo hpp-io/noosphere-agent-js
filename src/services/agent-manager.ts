@@ -108,6 +108,9 @@ export class AgentManager extends EventEmitter {
     agent.on('computeDelivered', (data) => this.emit('computeDelivered', data));
     agent.on('started', (data) => this.emit('agentStarted', data));
     agent.on('stopped', (data) => this.emit('agentStopped', data));
+    agent.on('epochRegistered', (data) => this.emit('epochRegistered', data));
+    agent.on('epochRunningLow', (data) => this.emit('epochRunningLow', data));
+    agent.on('epochRegistrationFailed', (data) => this.emit('epochRegistrationFailed', data));
 
     // Initialize and start
     await agent.initialize();

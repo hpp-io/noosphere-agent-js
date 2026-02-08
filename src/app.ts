@@ -243,6 +243,33 @@ app.delete('/api/agents/:id', async (req, res) => {
 });
 
 // ============================================================================
+// VRF / Epoch Manager API
+// ============================================================================
+
+app.get('/api/vrf/status', async (_req, res) => {
+  try {
+    const manager = getAgentManager();
+    const agents = manager.getAllAgents();
+
+    const statuses = [];
+    for (const agent of agents) {
+      const vrfStatus = await agent.getVRFStatus();
+      if (vrfStatus) {
+        statuses.push({ agentId: agent.id, ...vrfStatus });
+      }
+    }
+
+    if (statuses.length > 0) {
+      res.json({ enabled: true, agents: statuses });
+    } else {
+      res.json({ enabled: false, message: 'VRF/EpochManager not configured' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ============================================================================
 // Scheduler API
 // ============================================================================
 
@@ -619,6 +646,17 @@ async function start() {
     manager.on('agentStopped', (data) => {
       metrics.increment('agentStops');
       io.emit('agentStopped', serializeForJson(data));
+    });
+    manager.on('epochRegistered', (data) => {
+      metrics.increment('epochsRegistered');
+      io.emit('epochRegistered', serializeForJson(data));
+    });
+    manager.on('epochRunningLow', (data) => {
+      io.emit('epochRunningLow', serializeForJson(data));
+    });
+    manager.on('epochRegistrationFailed', (data) => {
+      metrics.increment('epochRegistrationFailures');
+      io.emit('epochRegistrationFailed', serializeForJson(data));
     });
 
     await manager.startFromConfig();
