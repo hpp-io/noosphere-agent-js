@@ -107,6 +107,31 @@ export interface ContainerExecutionConfig {
   connectionRetryDelayMs?: number; // Delay between retries in ms (default: 3000)
 }
 
+export interface VRFConfig {
+  enabled?: boolean;                  // Enable EpochManager service (default: false)
+  vrfAddress: string;                 // NoosphereVRF contract address
+  vrngContainerUrl: string;           // VRNG container HTTP endpoint (e.g. http://localhost:8085)
+  autoRegisterEpoch?: boolean;        // Auto-register next epoch on EpochRunningLow (default: true)
+  epochLowThreshold?: number;         // Register next epoch when remaining < N (default: 100)
+  retryAttempts?: number;             // Retry attempts for failed operations (default: 3)
+  retryDelayMs?: number;              // Delay between retries in ms (default: 10000)
+  pollingIntervalMs?: number;         // Fallback polling interval for epoch check (default: 60000)
+}
+
+export interface VRFStatus {
+  enabled: boolean;
+  vrfAddress: string;
+  currentEpoch: number;
+  epochRemaining: number;
+  epochSize: number;
+  nextEpochRegistered: boolean;
+  lastRegistrationTx?: string;
+  lastRegistrationEpoch?: number;
+  autoRegisterEnabled: boolean;
+  vrfOwner?: string;
+  isOwner?: boolean;
+}
+
 export interface AgentConfigFile {
   chain: ChainConfig;
   containers?: ContainerConfig[];
@@ -115,6 +140,7 @@ export interface AgentConfigFile {
   retry?: RetryConfig;
   payload?: PayloadConfig;
   containerExecution?: ContainerExecutionConfig;
+  vrf?: VRFConfig;
   logging?: {
     level?: string;
   };

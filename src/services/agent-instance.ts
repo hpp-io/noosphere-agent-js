@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import {
   NoosphereAgent,
   RegistryManager,
+  KeystoreManager,
   CheckpointData,
   ComputeDeliveredEvent,
   RequestStartedCallbackEvent,
@@ -14,7 +15,8 @@ import {
 } from '@noosphere/agent-core';
 import { getDatabase } from '../../lib/db';
 import { logger } from '../../lib/logger';
-import { AgentConfigFile, AgentStatus, AgentInstanceStatus } from '../types';
+import { AgentConfigFile, AgentStatus, AgentInstanceStatus, VRFStatus } from '../types';
+import { EpochManager } from './epoch-manager';
 
 /**
  * Substitute ${VAR} patterns in env object with actual environment variable values
@@ -37,6 +39,7 @@ function substituteEnvVars(env: Record<string, string> | undefined): Record<stri
 
 export class AgentInstance extends EventEmitter {
   private noosphereAgent?: NoosphereAgent;
+  private epochManager?: EpochManager;
   private status: AgentStatus = 'stopped';
   private startedAt?: number;
   private lastActiveAt?: number;
@@ -289,6 +292,32 @@ export class AgentInstance extends EventEmitter {
         },
       );
 
+      // Initialize EpochManager if VRF config is enabled
+      if (this.config.vrf?.enabled && this.config.vrf.vrfAddress) {
+        try {
+          this.epochManager = new EpochManager(
+            this.config.vrf,
+            this.config.chain.rpcUrl,
+            this.config.chain.wsRpcUrl,
+          );
+
+          // Forward epoch events
+          this.epochManager.on('epochRegistered', (data) => {
+            this.emit('epochRegistered', { agentId: this.id, ...data });
+          });
+          this.epochManager.on('epochRunningLow', (data) => {
+            this.emit('epochRunningLow', { agentId: this.id, ...data });
+          });
+          this.epochManager.on('epochRegistrationFailed', (data) => {
+            this.emit('epochRegistrationFailed', { agentId: this.id, ...data });
+          });
+
+          logger.info(`[${this.id}] EpochManager initialized (VRF: ${this.config.vrf.vrfAddress})`);
+        } catch (err) {
+          logger.error(`[${this.id}] EpochManager init failed: ${(err as Error).message}`);
+        }
+      }
+
       logger.info(`[${this.id}] Agent initialized`);
     } catch (error) {
       this.status = 'error';
@@ -306,6 +335,23 @@ export class AgentInstance extends EventEmitter {
     this.startedAt = Date.now();
     this.lastActiveAt = Date.now();
     this.db.fixInconsistentEventStatuses();
+
+    // Start EpochManager (needs private key from keystore)
+    if (this.epochManager) {
+      try {
+        const keystoreManager = new KeystoreManager(
+          this.config.chain.wallet.keystorePath,
+          this.keystorePassword,
+        );
+        await keystoreManager.load();
+        const provider = new ethers.JsonRpcProvider(this.config.chain.rpcUrl);
+        const wallet = await keystoreManager.getEOA(provider);
+        await this.epochManager.start(wallet.privateKey);
+      } catch (err) {
+        logger.error(`[${this.id}] EpochManager start failed: ${(err as Error).message}`);
+      }
+    }
+
     logger.info(`[${this.id}] Agent started`);
     this.emit('started', { agentId: this.id });
   }
@@ -314,6 +360,11 @@ export class AgentInstance extends EventEmitter {
     if (!this.noosphereAgent) return;
     this.status = 'stopping';
     logger.info(`[${this.id}] Stopping agent...`);
+
+    if (this.epochManager) {
+      await this.epochManager.stop();
+    }
+
     await this.noosphereAgent.stop();
     this.status = 'stopped';
     logger.info(`[${this.id}] Agent stopped`);
@@ -342,6 +393,10 @@ export class AgentInstance extends EventEmitter {
       startedAt: this.startedAt,
       lastActiveAt: this.lastActiveAt,
     };
+  }
+
+  getVRFStatus(): VRFStatus | undefined {
+    return this.epochManager?.getStatus();
   }
 
   /**

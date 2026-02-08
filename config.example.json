@@ -53,5 +53,13 @@
         }
       }
     }
-  ]
+  ],
+  "vrf": {
+    "enabled": false,
+    "vrfAddress": "0xYourNoosphereVRFAddress",
+    "vrngContainerUrl": "http://localhost:8085",
+    "autoRegisterEpoch": true,
+    "epochLowThreshold": 100,
+    "pollingIntervalMs": 60000
+  }
 }
