@@ -246,20 +246,24 @@ app.delete('/api/agents/:id', async (req, res) => {
 // VRF / Epoch Manager API
 // ============================================================================
 
-app.get('/api/vrf/status', (_req, res) => {
+app.get('/api/vrf/status', async (_req, res) => {
   try {
     const manager = getAgentManager();
     const agents = manager.getAllAgents();
 
-    // Get VRF status from first agent that has it enabled
+    const statuses = [];
     for (const agent of agents) {
-      const vrfStatus = agent.getVRFStatus();
+      const vrfStatus = await agent.getVRFStatus();
       if (vrfStatus) {
-        return res.json(vrfStatus);
+        statuses.push({ agentId: agent.id, ...vrfStatus });
       }
     }
 
-    res.json({ enabled: false, message: 'VRF/EpochManager not configured' });
+    if (statuses.length > 0) {
+      res.json({ enabled: true, agents: statuses });
+    } else {
+      res.json({ enabled: false, message: 'VRF/EpochManager not configured' });
+    }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

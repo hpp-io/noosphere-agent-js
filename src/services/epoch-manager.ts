@@ -364,8 +364,11 @@ export class EpochManager extends EventEmitter {
         logger.info(`[EpochManager] Next epoch ${nextEpoch} already registered`);
         return;
       }
-    } catch {
-      // Proceed with registration attempt
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (!msg.includes('EpochNotRegistered')) {
+        logger.warn(`[EpochManager] Pre-check for epoch ${nextEpoch} failed unexpectedly: ${msg}`);
+      }
     }
 
     logger.info(`[EpochManager] Auto-registering next epoch ${nextEpoch} (current remaining: ${remaining})`);
@@ -382,14 +385,24 @@ export class EpochManager extends EventEmitter {
   // Status & Helpers
   // ═══════════════════════════════════════════════════════════
 
-  getStatus(): VRFStatus {
+  async getStatus(): Promise<VRFStatus> {
+    let nextEpochRegistered = false;
+    if (this.vrfContractReadOnly) {
+      try {
+        const root = await this.vrfContractReadOnly.getEpochRoot(this.currentEpoch + 1);
+        nextEpochRegistered = root !== ethers.ZeroHash;
+      } catch {
+        nextEpochRegistered = false;
+      }
+    }
+
     return {
       enabled: this.running,
       vrfAddress: this.config.vrfAddress,
       currentEpoch: this.currentEpoch,
       epochRemaining: this.epochRemaining,
       epochSize: this.epochSize,
-      nextEpochRegistered: false, // will be checked on-demand
+      nextEpochRegistered,
       lastRegistrationTx: this.lastRegistrationTx,
       lastRegistrationEpoch: this.lastRegistrationEpoch,
       autoRegisterEnabled: this.isVrfOwner && (this.config.autoRegisterEpoch ?? true),

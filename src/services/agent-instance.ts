@@ -40,6 +40,7 @@ function substituteEnvVars(env: Record<string, string> | undefined): Record<stri
 export class AgentInstance extends EventEmitter {
   private noosphereAgent?: NoosphereAgent;
   private epochManager?: EpochManager;
+  private cachedPrivateKey?: string;
   private status: AgentStatus = 'stopped';
   private startedAt?: number;
   private lastActiveAt?: number;
@@ -295,6 +296,16 @@ export class AgentInstance extends EventEmitter {
       // Initialize EpochManager if VRF config is enabled
       if (this.config.vrf?.enabled && this.config.vrf.vrfAddress) {
         try {
+          // Load keystore once and cache private key for EpochManager
+          const keystoreManager = new KeystoreManager(
+            this.config.chain.wallet.keystorePath,
+            this.keystorePassword,
+          );
+          await keystoreManager.load();
+          const provider = new ethers.JsonRpcProvider(this.config.chain.rpcUrl);
+          const wallet = await keystoreManager.getEOA(provider);
+          this.cachedPrivateKey = wallet.privateKey;
+
           this.epochManager = new EpochManager(
             this.config.vrf,
             this.config.chain.rpcUrl,
@@ -336,17 +347,10 @@ export class AgentInstance extends EventEmitter {
     this.lastActiveAt = Date.now();
     this.db.fixInconsistentEventStatuses();
 
-    // Start EpochManager (needs private key from keystore)
-    if (this.epochManager) {
+    // Start EpochManager using cached private key from initialize()
+    if (this.epochManager && this.cachedPrivateKey) {
       try {
-        const keystoreManager = new KeystoreManager(
-          this.config.chain.wallet.keystorePath,
-          this.keystorePassword,
-        );
-        await keystoreManager.load();
-        const provider = new ethers.JsonRpcProvider(this.config.chain.rpcUrl);
-        const wallet = await keystoreManager.getEOA(provider);
-        await this.epochManager.start(wallet.privateKey);
+        await this.epochManager.start(this.cachedPrivateKey);
       } catch (err) {
         logger.error(`[${this.id}] EpochManager start failed: ${(err as Error).message}`);
       }
@@ -395,7 +399,7 @@ export class AgentInstance extends EventEmitter {
     };
   }
 
-  getVRFStatus(): VRFStatus | undefined {
+  async getVRFStatus(): Promise<VRFStatus | undefined> {
     return this.epochManager?.getStatus();
   }
 
