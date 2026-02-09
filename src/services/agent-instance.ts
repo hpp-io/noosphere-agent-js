@@ -136,7 +136,7 @@ export class AgentInstance extends EventEmitter {
             const vrfInline = !!this.config.vrf?.inlinePayload;
             const encodeOptions = vrfInline ? { storage: 'data' as const } : {};
             const result = await this.payloadResolver.encode(content, encodeOptions);
-            console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...${vrfInline ? ' (VRF inline forced)' : ''}`);
+            logger.info(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...${vrfInline ? ' (VRF inline forced)' : ''}`);
             // Convert URI to bytes (hex-encoded) for on-chain submission if not already encoded
             // The @noosphere/agent-core PayloadResolver may return bytes (0x...) or plain string
             let uri = result.uri;
