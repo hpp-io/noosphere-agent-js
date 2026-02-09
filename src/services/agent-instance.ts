@@ -132,8 +132,11 @@ export class AgentInstance extends EventEmitter {
           // Payload encoder for IPFS upload (uses PayloadResolver)
           payloadEncoder: async (content: string) => {
             console.log(`  🔄 payloadEncoder called, content length: ${content.length}`);
-            const result = await this.payloadResolver.encode(content);
-            console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...`);
+            // VRF output must stay inline for on-chain base64 decoding (_decodeRevealOutput)
+            const vrfInline = !!this.config.vrf?.inlinePayload;
+            const encodeOptions = vrfInline ? { storage: 'data' as const } : {};
+            const result = await this.payloadResolver.encode(content, encodeOptions);
+            console.log(`  🔄 payloadEncoder result URI: ${result.uri.substring(0, 50)}...${vrfInline ? ' (VRF inline forced)' : ''}`);
             // Convert URI to bytes (hex-encoded) for on-chain submission if not already encoded
             // The @noosphere/agent-core PayloadResolver may return bytes (0x...) or plain string
             let uri = result.uri;

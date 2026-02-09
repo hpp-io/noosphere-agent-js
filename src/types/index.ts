@@ -116,6 +116,7 @@ export interface VRFConfig {
   retryAttempts?: number;             // Retry attempts for failed operations (default: 3)
   retryDelayMs?: number;              // Delay between retries in ms (default: 10000)
   pollingIntervalMs?: number;         // Fallback polling interval for epoch check (default: 60000)
+  inlinePayload?: boolean;            // Force inline data URI for VRF output (no off-chain upload, default: false)
 }
 
 export interface VRFStatus {
