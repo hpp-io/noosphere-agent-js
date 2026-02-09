@@ -68,5 +68,8 @@
     "enabled": true,
     "cronIntervalMs": 60000,
     "syncPeriodMs": 60000
+  },
+  "vrf": {
+    "inlinePayload": true
   }
 }
