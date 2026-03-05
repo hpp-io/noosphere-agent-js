@@ -32,6 +32,7 @@ export interface AgentManagerStatus {
 
 // Config types
 export interface ChainConfig {
+  chainId?: number;
   rpcUrl: string;
   wsRpcUrl?: string;
   routerAddress: string;

@@ -16,8 +16,11 @@ loadEnv();
 async function main() {
   console.log('🔐 Setting up Noosphere Agent Wallet\n');
 
-  // Load configuration from config.json
-  const configPath = path.join(process.cwd(), 'config.json');
+  // Load configuration from config.json (or NOOSPHERE_CONFIG_PATH)
+  const configPath = process.env.NOOSPHERE_CONFIG_PATH
+    ? path.resolve(process.env.NOOSPHERE_CONFIG_PATH)
+    : path.join(process.cwd(), 'config.json');
+  console.log(`📄 Config: ${configPath}`);
   const configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
   // Get secrets from environment variables

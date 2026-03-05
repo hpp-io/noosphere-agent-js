@@ -27,9 +27,8 @@ config*.json
 !config.example.json
 !config.docker.json.example
 agents.json
-*.keystore.json
-.noosphere/
-.noosphere-e2e/
+**/*.keystore.json
+.noosphere*/
 
 # =============================================================================
 # Development files (not needed in production)

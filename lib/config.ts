@@ -41,6 +41,7 @@ function substituteEnvVars(obj: any): any {
 export interface AgentConfig {
   chain: {
     enabled: boolean;
+    chainId?: number;
     rpcUrl: string;
     wsRpcUrl: string | null;
     routerAddress: string;

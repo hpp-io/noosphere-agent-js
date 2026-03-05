@@ -3,7 +3,8 @@
  * CLI tool to generate config.json from registry
  *
  * Usage:
- *   npm run generate:config                    # Interactive mode - select containers
+ *   npm run generate:config                    # Interactive mode (testnet default)
+ *   npm run generate:config -- --network mainnet  # Mainnet config
  *   npm run generate:config -- --list          # List available containers
  *   npm run generate:config -- --all           # Add all containers
  *   npm run generate:config -- --containers noosphere-hello-world,noosphere-llm
@@ -13,8 +14,46 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 
-const REGISTRY_URL = 'https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/registry.json';
-const CONFIG_TEMPLATE_PATH = './config.template.json';
+interface NetworkPreset {
+  chainId: number;
+  rpcUrl: string;
+  wsRpcUrl: string;
+  routerAddress: string;
+  coordinatorAddress: string;
+  deploymentBlock: number;
+  verifierAddress: string;
+  proofServiceImage: string;
+  vrfAddress: string;
+  registryUrl: string;
+}
+
+const NETWORK_PRESETS: Record<string, NetworkPreset> = {
+  testnet: {
+    chainId: 181228,
+    rpcUrl: 'https://sepolia.hpp.io',
+    wsRpcUrl: 'wss://sepolia.hpp.io',
+    routerAddress: '0x480a4f7506548773040d47dd7b6372dbf71358d4',
+    coordinatorAddress: '0xeda4a7957e8f5de6cd6bd747c3ccd5e1c295302c',
+    deploymentBlock: 10520,
+    verifierAddress: '0x672c325941E3190838523052ebFF122146864EAd',
+    proofServiceImage: 'ghcr.io/hpp-io/noosphere-proof-creator:dev',
+    vrfAddress: '0xb49Cf5e93A225638cD7fa8e4479149f453AE2e39',
+    registryUrl: 'https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/181228.json',
+  },
+  mainnet: {
+    chainId: 190415,
+    rpcUrl: 'https://mainnet.hpp.io',
+    wsRpcUrl: 'wss://mainnet.hpp.io',
+    routerAddress: '0x043F992d67dE8c86141EA5e0897b5244cD97dac4',
+    coordinatorAddress: '0x8b4951d0C2B15Ef4DE1f355e132A40Ac6c84E728',
+    deploymentBlock: 185172,
+    verifierAddress: '0xFF46177E5210A8dc31E98477295d6A91510d67a0',
+    proofServiceImage: 'ghcr.io/hpp-io/noosphere-proof-creator:latest',
+    vrfAddress: '0xFd3Fc50bC7b798eDFfCFaB948A1Fd1d614fDA24c',
+    registryUrl: 'https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/190415.json',
+  },
+};
+
 const CONFIG_OUTPUT_PATH = './config.json';
 
 interface RegistryContainer {
@@ -46,9 +85,9 @@ interface Registry {
   version: string;
 }
 
-async function fetchRegistry(): Promise<Registry> {
-  console.log('📡 Fetching registry from', REGISTRY_URL);
-  const response = await fetch(REGISTRY_URL);
+async function fetchRegistry(registryUrl: string): Promise<Registry> {
+  console.log('📡 Fetching registry from', registryUrl);
+  const response = await fetch(registryUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch registry: ${response.status}`);
   }
@@ -127,15 +166,16 @@ function generateContainerConfig(hashId: string, container: RegistryContainer): 
   return config;
 }
 
-function generateConfig(selectedContainers: ConfigContainer[]): object {
+function generateConfig(selectedContainers: ConfigContainer[], network: NetworkPreset): object {
   return {
     chain: {
       enabled: true,
-      rpcUrl: 'https://sepolia.hpp.io',
-      wsRpcUrl: 'wss://sepolia.hpp.io',
-      routerAddress: '0x31B0d4038b65E2c17c769Bad1eEeA18EEb1dBdF6',
-      coordinatorAddress: '0x5e055cd47e5d16f3645174cfe2423d61fe8f4585',
-      deploymentBlock: 7776,
+      chainId: network.chainId,
+      rpcUrl: network.rpcUrl,
+      wsRpcUrl: network.wsRpcUrl,
+      routerAddress: network.routerAddress,
+      coordinatorAddress: network.coordinatorAddress,
+      deploymentBlock: network.deploymentBlock,
       processingInterval: 5000,
       wallet: {
         keystorePath: './.noosphere/keystore.json',
@@ -147,16 +187,16 @@ function generateConfig(selectedContainers: ConfigContainer[]): object {
       {
         id: 'immediate-finalize-verifier',
         name: 'Immediate Finalize Verifier',
-        address: '0x672c325941E3190838523052ebFF122146864EAd',
+        address: network.verifierAddress,
         requiresProof: true,
         proofService: {
-          image: 'ghcr.io/hpp-io/noosphere-proof-creator:dev',
+          image: network.proofServiceImage,
           port: '3001',
           command: 'npm start',
           env: {
-            RPC_URL: 'https://sepolia.hpp.io',
-            CHAIN_ID: '181228',
-            IMMEDIATE_FINALIZE_VERIFIER_ADDRESS: '0x672c325941E3190838523052ebFF122146864EAd',
+            RPC_URL: network.rpcUrl,
+            CHAIN_ID: network.chainId.toString(),
+            IMMEDIATE_FINALIZE_VERIFIER_ADDRESS: network.verifierAddress,
             PRIVATE_KEY: '${PROOF_SERVICE_PRIVATE_KEY}',
           },
         },
@@ -167,8 +207,13 @@ function generateConfig(selectedContainers: ConfigContainer[]): object {
       cronIntervalMs: 60000,
       syncPeriodMs: 3000,
     },
-    logging: {
-      level: 'info',
+    vrf: {
+      enabled: false,
+      vrfAddress: network.vrfAddress,
+      vrngContainerUrl: 'http://localhost:8085',
+      autoRegisterEpoch: true,
+      epochLowThreshold: 100,
+      pollingIntervalMs: 60000,
     },
   };
 }
@@ -221,11 +266,25 @@ async function interactiveMode(registry: Registry): Promise<ConfigContainer[]> {
   return selectedContainers;
 }
 
+function parseNetwork(args: string[]): NetworkPreset {
+  const networkIdx = args.indexOf('--network');
+  const networkName = networkIdx >= 0 ? args[networkIdx + 1] : 'testnet';
+
+  const preset = NETWORK_PRESETS[networkName];
+  if (!preset) {
+    throw new Error(`Unknown network: ${networkName}. Available: ${Object.keys(NETWORK_PRESETS).join(', ')}`);
+  }
+
+  console.log(`🌐 Network: ${networkName} (chainId: ${preset.chainId})`);
+  return preset;
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
   try {
-    const registry = await fetchRegistry();
+    const network = parseNetwork(args);
+    const registry = await fetchRegistry(network.registryUrl);
 
     // --list: List available containers
     if (args.includes('--list')) {
@@ -270,7 +329,7 @@ async function main() {
     }
 
     // Generate config
-    const config = generateConfig(selectedContainers);
+    const config = generateConfig(selectedContainers, network);
 
     // Check if config.json exists
     const outputPath = args.includes('--output')

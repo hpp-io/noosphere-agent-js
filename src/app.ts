@@ -19,7 +19,12 @@ let cachedEoaAddress: string | null = null;
 
 async function getGlobalRegistry(): Promise<RegistryManager> {
   if (!cachedRegistry) {
-    cachedRegistry = new RegistryManager({ autoSync: false, cacheTTL: 3600000 });
+    const config = loadConfig();
+    const registryOptions: any = { autoSync: false, cacheTTL: 3600000 };
+    if (config.chain.chainId) {
+      registryOptions.remotePath = `https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/${config.chain.chainId}.json`;
+    }
+    cachedRegistry = new RegistryManager(registryOptions);
     await cachedRegistry.load();
   }
   return cachedRegistry;
