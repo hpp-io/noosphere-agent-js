@@ -77,7 +77,7 @@
   },
   "vrf": {
     "enabled": true,
-    "vrfAddress": "0xFd3Fc50bC7b798eDFfCFaB948A1Fd1d614fDA24c",
+    "vrfAddress": "0x6d179D718C7B772CA0d6f694308fb22A516a6eFf",
     "vrngContainerUrl": "http://localhost:8085",
     "autoRegisterEpoch": true,
     "epochLowThreshold": 100,
