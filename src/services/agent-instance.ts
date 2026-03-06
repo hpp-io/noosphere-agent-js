@@ -100,9 +100,12 @@ export class AgentInstance extends EventEmitter {
 
     try {
       // Load registry (per-network file based on chainId)
-      const registryOptions: any = { autoSync: true, cacheTTL: 3600000 };
+      const registryOptions: { autoSync: boolean; cacheTTL: number; remotePath?: string } = { autoSync: true, cacheTTL: 3600000 };
       if (this.config.chain.chainId) {
-        registryOptions.remotePath = `https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/${this.config.chain.chainId}.json`;
+        const safeChainId = String(this.config.chain.chainId).replace(/[^0-9]/g, '');
+        if (safeChainId) {
+          registryOptions.remotePath = `https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/${safeChainId}.json`;
+        }
       }
       this.registry = new RegistryManager(registryOptions);
       await this.registry.load();
