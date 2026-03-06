@@ -1,8 +1,4 @@
 {
-  "payload": {
-    "defaultStorage": "s3",
-    "uploadThreshold": 256
-  },
   "chain": {
     "enabled": true,
     "chainId": 190415,
@@ -11,10 +7,10 @@
     "routerAddress": "0x043F992d67dE8c86141EA5e0897b5244cD97dac4",
     "coordinatorAddress": "0x8b4951d0C2B15Ef4DE1f355e132A40Ac6c84E728",
     "deploymentBlock": 185172,
-    "processingInterval": 10000,
+    "processingInterval": 5000,
     "wallet": {
-      "keystorePath": "/app/.noosphere/keystore.json",
-      "paymentAddress": "0x0000000000000000000000000000000000000000"
+      "keystorePath": "./.noosphere/keystore.mainnet.json",
+      "paymentAddress": "0x11Ea5422FD8b63974B7cF433B2c36fdDfde7B8B9"
     }
   },
   "containers": [
@@ -51,7 +47,7 @@
       "image": "ghcr.io/hpp-io/example-vrng-noosphere:latest",
       "port": "8085",
       "env": {
-        "MASTER_SECRET": "${MASTER_SECRET}"
+        "MASTER_SECRET": "${MAINNET_MASTER_SECRET}"
       }
     }
   ],
@@ -81,8 +77,8 @@
   },
   "vrf": {
     "enabled": true,
-    "vrfAddress": "0xFd3Fc50bC7b798eDFfCFaB948A1Fd1d614fDA24c",
-    "vrngContainerUrl": "http://noosphere-vrng:8085",
+    "vrfAddress": "0x6d179D718C7B772CA0d6f694308fb22A516a6eFf",
+    "vrngContainerUrl": "http://localhost:8085",
     "autoRegisterEpoch": true,
     "epochLowThreshold": 100,
     "pollingIntervalMs": 60000,

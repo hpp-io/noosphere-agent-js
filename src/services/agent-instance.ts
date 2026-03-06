@@ -99,8 +99,15 @@ export class AgentInstance extends EventEmitter {
     logger.info(`[${this.id}] Initializing agent...`);
 
     try {
-      // Load registry
-      this.registry = new RegistryManager({ autoSync: true, cacheTTL: 3600000 });
+      // Load registry (per-network file based on chainId)
+      const registryOptions: { autoSync: boolean; cacheTTL: number; remotePath?: string } = { autoSync: true, cacheTTL: 3600000 };
+      if (this.config.chain.chainId) {
+        const safeChainId = String(this.config.chain.chainId).replace(/[^0-9]/g, '');
+        if (safeChainId) {
+          registryOptions.remotePath = `https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/${safeChainId}.json`;
+        }
+      }
+      this.registry = new RegistryManager(registryOptions);
       await this.registry.load();
 
       // Build container map

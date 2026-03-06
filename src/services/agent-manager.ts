@@ -62,11 +62,13 @@ export class AgentManager extends EventEmitter {
       return agents;
     }
 
-    // Fallback to single agent (config.json)
-    const singleConfigPath = path.join(process.cwd(), 'config.json');
+    // Fallback to single agent (NOOSPHERE_CONFIG_PATH or config.json)
+    const singleConfigPath = process.env.NOOSPHERE_CONFIG_PATH
+      ? path.resolve(process.env.NOOSPHERE_CONFIG_PATH)
+      : path.join(process.cwd(), 'config.json');
 
     if (fs.existsSync(singleConfigPath)) {
-      logger.info('Loading single-agent config from config.json');
+      logger.info(`Loading single-agent config from ${singleConfigPath}`);
       return [{
         id: 'default',
         name: 'Default Agent',

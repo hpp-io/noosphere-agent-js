@@ -2,11 +2,7 @@ import { EventEmitter } from 'events';
 import { ethers, Contract, JsonRpcProvider, WebSocketProvider, Wallet } from 'ethers';
 import { logger } from '../../lib/logger';
 import { VRFConfig, VRFStatus } from '../types';
-import * as fs from 'fs';
-import * as path from 'path';
-
-// Load NoosphereVRF ABI
-const VRF_ABI_PATH = path.join(__dirname, '../../abis/NoosphereVRF.json');
+import { ABIs } from '@noosphere/contracts';
 
 /**
  * EpochManager — manages NoosphereVRF epoch lifecycle.
@@ -41,12 +37,7 @@ export class EpochManager extends EventEmitter {
     private wsRpcUrl?: string,
   ) {
     super();
-
-    // Load ABI
-    if (!fs.existsSync(VRF_ABI_PATH)) {
-      throw new Error(`NoosphereVRF ABI not found at ${VRF_ABI_PATH}`);
-    }
-    this.vrfAbi = JSON.parse(fs.readFileSync(VRF_ABI_PATH, 'utf-8'));
+    this.vrfAbi = ABIs.NoosphereVRF;
   }
 
   /**
