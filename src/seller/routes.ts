@@ -7,7 +7,7 @@
  */
 
 import type { RequestHandler } from 'express';
-import { paymentMiddlewareFromConfig } from '@x402/express';
+import { paymentMiddlewareFromConfig, x402ResourceServer, x402HTTPResourceServer } from '@x402/express';
 import type { SchemeRegistration } from '@x402/express';
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import type { RoutesConfig, FacilitatorClient } from '@x402/core/server';
@@ -128,4 +128,38 @@ export function buildSellerMiddleware(
   const routes = buildSellerRoutes(directServices, opts);
   const middleware = paymentMiddlewareFromConfig(routes, facilitatorClients, schemes);
   return { middleware, routeKeys: Object.keys(routes) };
+}
+
+/**
+ * Payment gate for receipt-enabled services (M2b): drives the x402 resource
+ * server manually so the handler owns the order verify → run → settle → receipt
+ * (the auto middleware settles only AFTER the response, too late to embed the
+ * settle tx in a receipt). Same 402/verify/settle primitives, same facilitator.
+ */
+export interface ReceiptGate {
+  http: InstanceType<typeof x402HTTPResourceServer>;
+  /** Resolves once the facilitator's /supported has been fetched. */
+  ready: Promise<void>;
+  routeKeys: string[];
+}
+
+export function buildReceiptGate(
+  receiptServices: SellerServiceEntry[],
+  opts: SellerMiddlewareOptions,
+): ReceiptGate {
+  const networks = new Set(receiptServices.map((s) => s.network));
+  const seenUrls = new Map<string, FacilitatorClient>();
+  for (const net of networks) {
+    const url = opts.facilitators[net];
+    if (!url) throw new Error(`x402Seller: no facilitator URL configured for network "${net}"`);
+    if (!opts.defaultAsset[net]) throw new Error(`x402Seller: no defaultAsset configured for network "${net}"`);
+    if (!seenUrls.has(url)) seenUrls.set(url, new HTTPFacilitatorClient({ url }));
+  }
+
+  const server = new x402ResourceServer(Array.from(seenUrls.values()));
+  for (const net of networks) server.register(net as Network, new ExactEvmScheme());
+
+  const routes = buildSellerRoutes(receiptServices, opts);
+  const http = new x402HTTPResourceServer(server, routes);
+  return { http, ready: http.initialize(), routeKeys: Object.keys(routes) };
 }

@@ -11,9 +11,10 @@
 
 import type { Express, Request, Response } from 'express';
 import { validateSellerConfig } from './catalog';
-import { buildSellerMiddleware } from './routes';
+import { buildSellerMiddleware, buildReceiptGate } from './routes';
 import { inputGuard } from './validate-input';
 import { makeDirectHandler } from './settlement/direct';
+import { makeReceiptHandler } from './settlement/receipt';
 import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
 import { mountSellerApi } from './api';
 import { startQuickTunnel, type DemoTunnel } from './tunnel';
@@ -178,20 +179,28 @@ export class SellerService {
 
     const facilitators = this.config.facilitators ?? {};
     const defaultAsset = this.config.defaultAsset ?? {};
-
-    const { middleware, routeKeys } = buildSellerMiddleware(direct, {
-      payTo: this.payTo!,
-      facilitators,
-      defaultAsset,
-    });
+    const opts = { payTo: this.payTo!, facilitators, defaultAsset };
 
     // Input validation runs BEFORE payment so invalid input is rejected (400)
     // without charging the buyer. Generic JSON-Schema per service's inputSchema.
     app.use(inputGuard(direct));
 
-    // Payment middleware verifies X-PAYMENT for matched routes and settles
-    // after a <400 response; unmatched routes (e.g. /api/*, /paid/catalog) pass through.
-    app.use(middleware);
+    // receipt:true services use the manual gate (verify → run → settle →
+    // receipt); the rest use the auto middleware (serve-then-settle).
+    const withReceipt = direct.filter((s) => s.receipt === true);
+    const plain = direct.filter((s) => s.receipt !== true);
+
+    const mounted: string[] = [];
+
+    if (plain.length > 0) {
+      const { middleware, routeKeys } = buildSellerMiddleware(plain, opts);
+      // Verifies X-PAYMENT for matched routes and settles after a <400
+      // response; unmatched routes (e.g. /api/*, /paid/catalog) pass through.
+      app.use(middleware);
+      mounted.push(...routeKeys);
+    }
+
+    const gate = withReceipt.length > 0 ? buildReceiptGate(withReceipt, opts) : undefined;
 
     for (const svc of direct) {
       const container = containers.get(svc.containerId);
@@ -200,17 +209,22 @@ export class SellerService {
         continue;
       }
       const asset = defaultAsset[svc.network]?.address;
-      app.post(`/paid/compute/${svc.name}`, makeDirectHandler(svc, {
-        runner,
-        container,
-        db,
-        log: this.log,
-        asset,
-        timeoutMs: this.deps.timeoutMs,
-      }));
+      const common = { runner, container, db, log: this.log, asset, timeoutMs: this.deps.timeoutMs };
+      if (svc.receipt === true && gate) {
+        app.post(`/paid/compute/${svc.name}`, makeReceiptHandler(svc, {
+          ...common,
+          gate: gate.http,
+          gateReady: gate.ready.catch((err) => {
+            this.log.error(`[x402-seller] receipt gate init failed: ${(err as Error).message}`);
+          }) as Promise<void>,
+        }));
+        mounted.push(`POST /paid/compute/${svc.name} (receipt)`);
+      } else {
+        app.post(`/paid/compute/${svc.name}`, makeDirectHandler(svc, common));
+      }
     }
 
-    this.log.info(`[x402-seller] mounted direct routes — ${routeKeys.join(', ')}`);
+    this.log.info(`[x402-seller] mounted direct routes — ${mounted.join(', ')}`);
   }
 
   /** Read-only dashboard API (M5-c) — requires the jobs db. */
