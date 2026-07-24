@@ -5,9 +5,10 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { JsonRpcProvider } from 'ethers';
 import { ethers } from 'ethers';
-import { RegistryManager, KeystoreManager } from '@noosphere/agent-core';
+import { RegistryManager, KeystoreManager, ContainerManager } from '@noosphere/agent-core';
 import { getAgentManager } from './services/agent-manager';
 import { getMetrics } from './services/metrics';
+import { SellerService, buildContainerMetaMap } from './seller';
 import { getDatabase } from '../lib/db';
 import { loadConfig } from '../lib/config';
 import { logger } from '../lib/logger';
@@ -668,6 +669,27 @@ async function start() {
     });
 
     await manager.startFromConfig();
+
+    // x402 Seller (optional) — sell compute over HTTP/MCP. Inert unless enabled.
+    // A seller failure must never take down the compute worker, so it's guarded.
+    try {
+      const cfg = loadConfig();
+      if (cfg.x402Seller?.enabled) {
+        const containers = buildContainerMetaMap(cfg.containers ?? []);
+        const seller = new SellerService(cfg.x402Seller, {
+          containers,
+          runner: new ContainerManager(),
+          db: getDatabase(),
+          defaultPayTo: cfg.chain.wallet.paymentAddress,
+          logger,
+        });
+        await seller.initialize();
+        seller.mount(app);
+        logger.info('[x402-seller] enabled');
+      }
+    } catch (sellerError) {
+      logger.error(`[x402-seller] disabled — init failed: ${(sellerError as Error).message}`);
+    }
 
     httpServer.listen(port, () => {
       logger.info(`Express server running on http://localhost:${port}`);

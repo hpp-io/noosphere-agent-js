@@ -152,6 +152,37 @@ CREATE INDEX IF NOT EXISTS idx_prepare_tx_hash ON prepare_transactions(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_prepare_subscription ON prepare_transactions(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_prepare_created_at ON prepare_transactions(created_at DESC);
 
+-- ==================== x402 Seller Jobs ====================
+-- One row per paid x402 call handled by the seller module (src/seller).
+
+CREATE TABLE IF NOT EXISTS seller_jobs (
+    job_id TEXT PRIMARY KEY,
+
+    -- What was sold
+    service TEXT NOT NULL,
+    settlement TEXT NOT NULL,          -- 'direct' | 'onchain'
+    network TEXT,
+    scheme TEXT,
+
+    -- Payment
+    payer TEXT,
+    amount TEXT,                       -- atomic units of asset
+    asset TEXT,
+    settle_tx TEXT,                    -- filled from PAYMENT-RESPONSE after settle
+
+    -- Result / lifecycle: pending, running, completed, settled, failed
+    status TEXT NOT NULL DEFAULT 'pending',
+    output TEXT,
+    error_message TEXT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_seller_jobs_created_at ON seller_jobs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_seller_jobs_service ON seller_jobs(service);
+CREATE INDEX IF NOT EXISTS idx_seller_jobs_status ON seller_jobs(status);
+
 -- ==================== Metadata ====================
 
 CREATE TABLE IF NOT EXISTS metadata (

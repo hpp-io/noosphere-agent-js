@@ -103,6 +103,23 @@ export interface PrepareTransaction {
   created_at?: string;
 }
 
+export interface SellerJobRecord {
+  job_id: string;
+  service: string;
+  settlement: string;
+  network: string | null;
+  scheme: string | null;
+  payer: string | null;
+  amount: string | null;
+  asset: string | null;
+  settle_tx: string | null;
+  status: string;
+  output: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class AgentDatabase {
   private db: Database.Database;
   private static instance: AgentDatabase;
@@ -981,6 +998,78 @@ export class AgentDatabase {
       successCount: result.success_count,
       failedCount: result.failed_count,
     };
+  }
+
+  // ==================== x402 Seller Jobs ====================
+
+  /** Insert a new paid-call job (status 'pending'). */
+  public saveSellerJob(job: {
+    job_id: string;
+    service: string;
+    settlement: string;
+    network?: string;
+    scheme?: string;
+    payer?: string;
+    amount?: string;
+    asset?: string;
+    status?: string;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO seller_jobs (job_id, service, settlement, network, scheme, payer, amount, asset, status)
+      VALUES (@job_id, @service, @settlement, @network, @scheme, @payer, @amount, @asset, @status)
+      ON CONFLICT(job_id) DO NOTHING
+    `).run({
+      job_id: job.job_id,
+      service: job.service,
+      settlement: job.settlement,
+      network: job.network ?? null,
+      scheme: job.scheme ?? null,
+      payer: job.payer ?? null,
+      amount: job.amount ?? null,
+      asset: job.asset ?? null,
+      status: job.status ?? 'pending',
+    });
+  }
+
+  /** Update a job's lifecycle fields. Only provided fields are written. */
+  public updateSellerJob(jobId: string, patch: {
+    status?: string;
+    output?: string;
+    error_message?: string;
+    settle_tx?: string;
+    payer?: string;
+  }): void {
+    const sets: string[] = [];
+    const params: Record<string, unknown> = { job_id: jobId };
+    for (const key of ['status', 'output', 'error_message', 'settle_tx', 'payer'] as const) {
+      if (patch[key] !== undefined) {
+        sets.push(`${key} = @${key}`);
+        params[key] = patch[key];
+      }
+    }
+    if (sets.length === 0) return;
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    this.db.prepare(`UPDATE seller_jobs SET ${sets.join(', ')} WHERE job_id = @job_id`).run(params);
+  }
+
+  /** Recent jobs, newest first. */
+  public getSellerJobs(limit = 50): SellerJobRecord[] {
+    return this.db.prepare(`
+      SELECT * FROM seller_jobs ORDER BY created_at DESC LIMIT ?
+    `).all(Math.max(1, Math.min(limit, 500))) as SellerJobRecord[];
+  }
+
+  /** Aggregate earnings per service over settled jobs. */
+  public getSellerEarnings(): Array<{ service: string; calls: number; earnings: string }> {
+    const rows = this.db.prepare(`
+      SELECT service,
+             COUNT(*) as calls,
+             COALESCE(SUM(CAST(amount AS INTEGER)), 0) as earnings
+      FROM seller_jobs
+      WHERE status = 'settled'
+      GROUP BY service
+    `).all() as Array<{ service: string; calls: number; earnings: number }>;
+    return rows.map(r => ({ service: r.service, calls: r.calls, earnings: String(r.earnings) }));
   }
 
   /**
