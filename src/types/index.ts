@@ -1,3 +1,5 @@
+import type { X402SellerConfig } from '../seller/types';
+
 // Agent types
 export type AgentStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
 
@@ -143,6 +145,7 @@ export interface AgentConfigFile {
   payload?: PayloadConfig;
   containerExecution?: ContainerExecutionConfig;
   vrf?: VRFConfig;
+  x402Seller?: X402SellerConfig;
   logging?: {
     level?: string;
   };

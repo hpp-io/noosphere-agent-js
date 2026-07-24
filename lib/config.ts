@@ -9,6 +9,7 @@
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import type { X402SellerConfig } from '../src/seller/types';
 
 /**
  * Recursively substitute ${ENV_VAR} patterns in config values
@@ -87,6 +88,8 @@ export interface AgentConfig {
     verified?: boolean;
     description?: string;
   }>;
+  /** Optional x402 seller module — sell compute over HTTP/MCP (see src/seller). */
+  x402Seller?: X402SellerConfig;
 }
 
 export interface RuntimeConfig extends AgentConfig {

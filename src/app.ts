@@ -5,9 +5,10 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { JsonRpcProvider } from 'ethers';
 import { ethers } from 'ethers';
-import { RegistryManager, KeystoreManager } from '@noosphere/agent-core';
+import { RegistryManager, KeystoreManager, ContainerManager } from '@noosphere/agent-core';
 import { getAgentManager } from './services/agent-manager';
 import { getMetrics } from './services/metrics';
+import { SellerService, buildContainerMetaMap } from './seller';
 import { getDatabase } from '../lib/db';
 import { loadConfig } from '../lib/config';
 import { logger } from '../lib/logger';
@@ -669,9 +670,46 @@ async function start() {
 
     await manager.startFromConfig();
 
+    // x402 Seller (optional) — sell compute over HTTP/MCP. Inert unless enabled.
+    // A seller failure must never take down the compute worker, so it's guarded.
+    let seller: SellerService | undefined;
+    try {
+      const cfg = loadConfig();
+      if (cfg.x402Seller?.enabled) {
+        const containers = buildContainerMetaMap(cfg.containers ?? []);
+        // Discovery listing registration signs with the agent keystore EOA.
+        let signer;
+        try {
+          const { keystore } = await getGlobalKeystore();
+          signer = await keystore.getEOA(new JsonRpcProvider(cfg.chain.rpcUrl));
+        } catch {
+          signer = undefined; // no keystore → registration silently unavailable
+        }
+        seller = new SellerService(cfg.x402Seller, {
+          containers,
+          runner: new ContainerManager(),
+          db: getDatabase(),
+          defaultPayTo: cfg.chain.wallet.paymentAddress,
+          signer,
+          rpcUrl: cfg.chain.rpcUrl,
+          port,
+          logger,
+        });
+        await seller.initialize();
+        seller.mount(app);
+        logger.info('[x402-seller] enabled');
+      }
+    } catch (sellerError) {
+      seller = undefined;
+      logger.error(`[x402-seller] disabled — init failed: ${(sellerError as Error).message}`);
+    }
+
     httpServer.listen(port, () => {
       logger.info(`Express server running on http://localhost:${port}`);
       logger.info('WebSocket ready');
+      // Post-listen: demo tunnel + discovery registration (best-effort).
+      seller?.announce().catch((err) =>
+        logger.error(`[x402-seller] announce failed: ${(err as Error).message}`));
     });
 
     // Status logging with error handling and auto-recovery
@@ -722,6 +760,7 @@ async function start() {
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       logger.info(`${signal} received, shutting down...`);
+      seller?.shutdown();
       await manager.shutdown();
       // Checkpoint and close database to ensure WAL is flushed
       const db = getDatabase();

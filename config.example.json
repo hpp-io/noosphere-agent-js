@@ -61,5 +61,31 @@
     "autoRegisterEpoch": true,
     "epochLowThreshold": 100,
     "pollingIntervalMs": 60000
+  },
+  "x402Seller": {
+    "enabled": false,
+    "payTo": "0xYourReceivingAddress",
+    "facilitators": {
+      "eip155:181228": "https://facilitator-sepolia.hpp.io"
+    },
+    "defaultAsset": {
+      "eip155:181228": {
+        "address": "0x401eCb1D350407f13ba348573E5630B83638E30D",
+        "extra": { "name": "Bridged USDC", "version": "2" }
+      }
+    },
+    "discovery": { "enabled": false, "url": "https://x402-discovery.hpp.io" },
+    "services": [
+      {
+        "name": "llm",
+        "containerId": "0x4548979e884d5d80117fbed9525e85279935318bdb71f8b73894cf7230686e93",
+        "settlement": "direct",
+        "network": "eip155:181228",
+        "schemes": ["exact"],
+        "x402Price": "10000",
+        "receipt": true,
+        "description": "LLM inference, charged per call"
+      }
+    ]
   }
 }
