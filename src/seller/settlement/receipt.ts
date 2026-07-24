@@ -1,5 +1,5 @@
 /**
- * Receipt settlement handler (M2b, design 02 §6.2).
+ * Receipt settlement handler.
  *
  * For services with `receipt: true` the seller owns the settlement order:
  *   verify (402 challenge handled by the gate) → run container → settle

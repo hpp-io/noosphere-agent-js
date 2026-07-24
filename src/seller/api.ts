@@ -1,5 +1,5 @@
 /**
- * x402 Seller — dashboard read API (M5-c, design 03 §8.3).
+ * x402 Seller — dashboard read API — read-only stats for the dashboard Seller tab.
  *
  * GET /api/seller/summary   — KPI tiles (earnings 30d + delta, calls, settle rate)
  * GET /api/seller/wallets   — payTo USDC.e balance + agent gas ETH

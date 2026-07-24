@@ -1,13 +1,13 @@
 /**
- * Seller M1 smoke test — real @x402 middleware against a live facilitator.
+ * Seller smoke test — real @x402 middleware against a live facilitator.
  *
  * Proves the direct-settlement route negotiates a correct 402 challenge with a
- * REAL facilitator (default local stack :4022, override with FACILITATOR_URL).
+ * REAL facilitator (public HPP Sepolia facilitator; override with FACILITATOR_URL).
  * Does NOT perform on-chain settlement (that needs a funded buyer + running
- * container — the full L5 e2e). This closes the integration between our seller
+ * container). This closes the integration between our seller
  * wiring and the facilitator's /supported.
  *
- *   FACILITATOR_URL=http://localhost:4022 npx tsx scripts/seller-e2e-smoke.ts
+ *   FACILITATOR_URL=<your facilitator> npx tsx scripts/seller-e2e-smoke.ts
  */
 import express from 'express';
 import { SellerService } from '../src/seller';
@@ -15,7 +15,7 @@ import type { SellerJobsDb } from '../src/seller/deps';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 4099);
 const NETWORK = process.env.SMOKE_NETWORK ?? 'eip155:181228';
-const FACILITATOR = process.env.FACILITATOR_URL ?? 'http://localhost:4022';
+const FACILITATOR = process.env.FACILITATOR_URL ?? 'https://facilitator-sepolia.hpp.io';
 const USDCE = process.env.USDCE_ADDRESS ?? '0x401eCb1D350407f13ba348573E5630B83638E30D';
 
 const noopDb: SellerJobsDb = {
@@ -30,7 +30,7 @@ async function main() {
   const seller = new SellerService(
     {
       enabled: true,
-      payTo: '0x26907E00A0Bf7C6F3F26f1a9dA089E6f2fEd4f21',
+      payTo: '0x1111111111111111111111111111111111111111',
       facilitators: { [NETWORK]: FACILITATOR },
       defaultAsset: { [NETWORK]: { address: USDCE, extra: { name: 'Bridged USDC', version: '2' } } },
       services: [
@@ -96,8 +96,8 @@ async function main() {
     const a = Array.isArray(accepts) ? accepts[0] : undefined;
     check('402 advertises exact scheme on network', a?.scheme === 'exact' && a?.network === NETWORK, JSON.stringify(a));
     const amount = String(a?.maxAmountRequired ?? a?.price?.amount ?? a?.amount ?? a?.maxAmount ?? '');
-    check('402 advertises our payTo + price', !!a?.payTo?.toLowerCase().includes('26907e') && amount === '10000', `payTo=${a?.payTo} amount=${amount}`);
-    // M5-a: the bazaar discovery extension must ride the 402 (settle-indexing).
+    check('402 advertises our payTo + price', !!a?.payTo?.toLowerCase().includes('11111111') && amount === '10000', `payTo=${a?.payTo} amount=${amount}`);
+    // The bazaar discovery extension must ride the 402 (settle-indexing).
     const extFlat = JSON.stringify(body.extensions ?? {});
     check('402 carries bazaar discovery extension', extFlat.includes('bazaar'), extFlat.slice(0, 120));
   } else {

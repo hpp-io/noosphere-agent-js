@@ -1,8 +1,8 @@
 /**
- * x402 Seller — payment middleware + route wiring (M1, direct/exact).
+ * x402 Seller — payment middleware + route wiring (direct settlement, exact scheme).
  *
  * Builds the @x402/express payment middleware from the direct-settlement
- * services. M1 supports the `exact` (EIP-3009) scheme only; on-chain dispatch
+ * services. Currently the `exact` (EIP-3009) scheme is supported; on-chain dispatch
  * and other schemes arrive in later milestones.
  */
 
@@ -66,7 +66,7 @@ export function buildSellerRoutes(
 
     // Bazaar discovery extension: rides the 402 response → echoed into
     // paymentRequirements → forwarded by the facilitator on settle → the
-    // discovery indexer auto-lists this service (ingest path A, design 04).
+    // discovery indexer auto-lists this service (settlement-driven ingestion).
     // A complete declaration raises metadataScore, which feeds ranking.
     // The SDK validates the example `input` against inputSchema, so when the
     // seller didn't provide one we synthesize a minimal schema-valid example.
@@ -131,7 +131,7 @@ export function buildSellerMiddleware(
 }
 
 /**
- * Payment gate for receipt-enabled services (M2b): drives the x402 resource
+ * Payment gate for receipt-enabled services: drives the x402 resource
  * server manually so the handler owns the order verify → run → settle → receipt
  * (the auto middleware settles only AFTER the response, too late to embed the
  * settle tx in a receipt). Same 402/verify/settle primitives, same facilitator.

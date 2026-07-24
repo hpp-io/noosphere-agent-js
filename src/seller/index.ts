@@ -1,12 +1,16 @@
 /**
  * x402 Seller — service entry point.
  *
- * M0: config/catalog validation + read-only GET /paid/catalog.
- * M1: direct-settlement paid routes (POST /paid/compute/<svc>, exact scheme) —
- *     x402 payment → run container locally → return output.
+ * Wires everything the seller module offers onto the agent's Express app:
+ *   - GET /paid/catalog (read-only service listing)
+ *   - POST /paid/compute/<svc> paid routes (x402 → run container → settle),
+ *     with optional execution receipts
+ *   - MCP transport (/mcp) mirroring the paid routes as compute_<svc> tools
+ *   - dashboard read API (/api/seller/*)
+ *   - discovery announcement (bazaar on 402 + optional explicit registration)
  *
- * NOT yet: on-chain dispatch (M4), MCP transport (M3), discovery (M5).
- * Those are guarded/logged so the wiring is inert but discoverable.
+ * On-chain dispatch mode (settlement: "onchain") is roadmap — entries validate
+ * but are not served yet.
  */
 
 import type { Express, Request, Response } from 'express';
@@ -147,7 +151,7 @@ export class SellerService {
     const onchain = this.services.filter((s) => s.settlement === 'onchain');
     if (onchain.length > 0) {
       this.log.warn(
-        `[x402-seller] ${onchain.length} on-chain service(s) not served yet (M4): ` +
+        `[x402-seller] ${onchain.length} on-chain service(s) not served yet (roadmap): ` +
           onchain.map((s) => s.name).join(', '),
       );
     }
@@ -232,7 +236,7 @@ export class SellerService {
   }
 
   /**
-   * MCP transport (M3) — async (fetches facilitator /supported) so it mounts
+   * MCP transport — async (fetches facilitator /supported) so it mounts
    * in the background; a failure disables MCP but never the HTTP routes.
    */
   private mountMcp(app: Express): void {
@@ -255,7 +259,7 @@ export class SellerService {
     });
   }
 
-  /** Read-only dashboard API (M5-c) — requires the jobs db. */
+  /** Read-only dashboard API — requires the jobs db. */
   private mountDashboardApi(app: Express): void {
     const { db } = this.deps;
     if (!db) return;
@@ -281,7 +285,7 @@ export class SellerService {
     if (!this.initialized) return;
     const disc = this.config.discovery;
 
-    // Resolve public base URL: demo tunnel overrides config (design 04 §8).
+    // Resolve public base URL: demo tunnel overrides config.
     let publicBaseUrl = disc?.publicBaseUrl;
     if (this.config.demoTunnel) {
       try {

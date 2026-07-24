@@ -1,5 +1,5 @@
 /**
- * x402 Seller — explicit discovery registration (ingest path B, design 04 §5.1).
+ * x402 Seller — explicit discovery registration.
  *
  * Flow per service:
  *   POST {apiUrl}/listings/challenge {payTo, action:'register'}   → {nonce, message}

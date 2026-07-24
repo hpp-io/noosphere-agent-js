@@ -4,13 +4,12 @@
  * The seller module lets a Noosphere agent sell its compute over HTTP/MCP via
  * x402 payments, in addition to the existing on-chain subscription rail.
  *
- * Two settlement modes per service (see design doc 02 §2):
+ * Two settlement modes per service:
  *   - "direct":  x402 payment → run the container locally → return over HTTP.
  *                No verifier / subscription. Low friction, seller keeps ~100%.
  *   - "onchain": x402 payment → dispatchPaidCompute on-chain → verifier delivery.
  *                Verifiable, margin = x402Price - feeAmount. Needs operator setup.
  *
- * M0 only defines/validates config. Payment handling arrives in M1+.
  */
 
 export type Settlement = 'direct' | 'onchain';
@@ -98,7 +97,7 @@ export interface X402SellerConfig {
   discovery?: X402SellerDiscoveryConfig;
   /**
    * TEST/DEMO ONLY — start a Cloudflare Quick Tunnel at boot and use its URL as
-   * publicBaseUrl. Ephemeral URL, no SLA; never use in production (see design 04 §8).
+   * publicBaseUrl. Ephemeral URL, no SLA; never use in production (test only).
    */
   demoTunnel?: boolean;
   /** Services offered for sale. */

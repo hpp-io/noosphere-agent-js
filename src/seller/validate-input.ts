@@ -1,5 +1,5 @@
 /**
- * x402 Seller — input validation (M2).
+ * x402 Seller — input validation.
  *
  * Generic JSON-Schema validation (ajv) of the request body against each
  * service's `inputSchema`, BEFORE the payment challenge. Invalid input is

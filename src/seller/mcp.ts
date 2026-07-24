@@ -1,5 +1,5 @@
 /**
- * x402 Seller — MCP transport (M3).
+ * x402 Seller — MCP transport.
  *
  * Mirrors the paid HTTP routes one-to-one as MCP tools: each direct service
  * becomes `compute_<name>`. Payment uses the standard @x402/mcp wrapper

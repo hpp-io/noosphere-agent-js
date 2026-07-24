@@ -1,5 +1,5 @@
 /**
- * Direct settlement handler (M1).
+ * Direct settlement handler.
  *
  * x402 payment (verified by the @x402/express middleware) → run the container
  * locally → return output. The middleware settles AFTER the handler returns a

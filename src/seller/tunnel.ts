@@ -1,5 +1,5 @@
 /**
- * Demo tunnel (TEST ONLY) — Cloudflare Quick Tunnel helper (design 04 §8).
+ * Demo tunnel (TEST ONLY) — Cloudflare Quick Tunnel helper.
  *
  * Spawns `cloudflared tunnel --url <localUrl>` and captures the ephemeral
  * https://*.trycloudflare.com URL from its stderr. No account/domain needed.
