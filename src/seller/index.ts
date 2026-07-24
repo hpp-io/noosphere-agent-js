@@ -17,6 +17,7 @@ import { makeDirectHandler } from './settlement/direct';
 import { makeReceiptHandler } from './settlement/receipt';
 import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
 import { mountSellerApi } from './api';
+import { mountSellerMcp } from './mcp';
 import { startQuickTunnel, type DemoTunnel } from './tunnel';
 import { SellerServiceEntry, X402SellerConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
@@ -72,6 +73,8 @@ export class SellerService {
   private readonly log: SellerLogger;
   private initialized = false;
   private tunnel?: DemoTunnel;
+  /** Resolves when the MCP transport is mounted (or skipped). Never rejects. */
+  mcpReady: Promise<{ tools: string[] }> = Promise.resolve({ tools: [] });
 
   constructor(
     private readonly config: X402SellerConfig,
@@ -139,6 +142,7 @@ export class SellerService {
     this.mountCatalog(app);
     this.mountDirectRoutes(app);
     this.mountDashboardApi(app);
+    this.mountMcp(app);
 
     const onchain = this.services.filter((s) => s.settlement === 'onchain');
     if (onchain.length > 0) {
@@ -225,6 +229,30 @@ export class SellerService {
     }
 
     this.log.info(`[x402-seller] mounted direct routes — ${mounted.join(', ')}`);
+  }
+
+  /**
+   * MCP transport (M3) — async (fetches facilitator /supported) so it mounts
+   * in the background; a failure disables MCP but never the HTTP routes.
+   */
+  private mountMcp(app: Express): void {
+    const { runner, db, containers } = this.deps;
+    if (!runner || !db || !containers) return;
+    this.mcpReady = mountSellerMcp({
+      app,
+      services: this.services,
+      containers,
+      runner,
+      db,
+      log: this.log,
+      payTo: this.payTo!,
+      facilitators: this.config.facilitators ?? {},
+      defaultAsset: this.config.defaultAsset ?? {},
+      timeoutMs: this.deps.timeoutMs,
+    }).catch((err) => {
+      this.log.error(`[x402-seller] mcp mount failed: ${(err as Error).message}`);
+      return { tools: [] };
+    });
   }
 
   /** Read-only dashboard API (M5-c) — requires the jobs db. */
