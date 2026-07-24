@@ -95,6 +95,9 @@ async function main() {
     check('402 advertises exact scheme on network', a?.scheme === 'exact' && a?.network === NETWORK, JSON.stringify(a));
     const amount = String(a?.maxAmountRequired ?? a?.price?.amount ?? a?.amount ?? a?.maxAmount ?? '');
     check('402 advertises our payTo + price', !!a?.payTo?.toLowerCase().includes('26907e') && amount === '10000', `payTo=${a?.payTo} amount=${amount}`);
+    // M5-a: the bazaar discovery extension must ride the 402 (settle-indexing).
+    const extFlat = JSON.stringify(body.extensions ?? {});
+    check('402 carries bazaar discovery extension', extFlat.includes('bazaar'), extFlat.slice(0, 120));
   } else {
     console.log('    response:', await res.text().catch(() => ''));
   }

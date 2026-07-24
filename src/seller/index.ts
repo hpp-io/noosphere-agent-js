@@ -14,6 +14,8 @@ import { validateSellerConfig } from './catalog';
 import { buildSellerMiddleware } from './routes';
 import { inputGuard } from './validate-input';
 import { makeDirectHandler } from './settlement/direct';
+import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
+import { startQuickTunnel, type DemoTunnel } from './tunnel';
 import { SellerServiceEntry, X402SellerConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
 
@@ -30,6 +32,12 @@ export interface SellerServiceDeps {
   defaultPayTo?: string;
   /** Container execution timeout (ms). */
   timeoutMs?: number;
+  /** EOA signer for discovery listing registration (must equal payTo to register). */
+  signer?: ListingSigner;
+  /** Local HTTP port (used by the demo tunnel). */
+  port?: number;
+  /** Injectable tunnel starter (tests). Defaults to Cloudflare Quick Tunnel. */
+  startTunnel?: (localUrl: string) => Promise<DemoTunnel>;
   logger?: SellerLogger;
 }
 
@@ -59,6 +67,7 @@ export class SellerService {
   private services: SellerServiceEntry[] = [];
   private readonly log: SellerLogger;
   private initialized = false;
+  private tunnel?: DemoTunnel;
 
   constructor(
     private readonly config: X402SellerConfig,
@@ -198,5 +207,72 @@ export class SellerService {
     }
 
     this.log.info(`[x402-seller] mounted direct routes — ${routeKeys.join(', ')}`);
+  }
+
+  /**
+   * Post-listen announcement (call after the HTTP server is up):
+   *   - demoTunnel: start a Quick Tunnel (TEST ONLY) → publicBaseUrl
+   *   - discovery.register: explicitly register listings (ingest path B)
+   * Best-effort — failures log and never take the agent down.
+   */
+  async announce(): Promise<void> {
+    if (!this.initialized) return;
+    const disc = this.config.discovery;
+
+    // Resolve public base URL: demo tunnel overrides config (design 04 §8).
+    let publicBaseUrl = disc?.publicBaseUrl;
+    if (this.config.demoTunnel) {
+      try {
+        const start = this.deps.startTunnel ?? startQuickTunnel;
+        this.tunnel = await start(`http://localhost:${this.deps.port ?? 4000}`);
+        publicBaseUrl = this.tunnel.url;
+        this.log.warn(`[x402-seller] DEMO tunnel active (test only, ephemeral URL): ${publicBaseUrl}`);
+      } catch (err) {
+        this.log.error(`[x402-seller] demo tunnel failed: ${(err as Error).message}`);
+      }
+    }
+
+    if (!disc?.enabled || !disc.register) return;
+
+    const apiUrl = disc.apiUrl ?? disc.url;
+    if (!apiUrl) {
+      this.log.warn('[x402-seller] discovery.register=true but no apiUrl — skipping registration');
+      return;
+    }
+    if (!publicBaseUrl) {
+      this.log.warn('[x402-seller] discovery.register=true but no publicBaseUrl (set discovery.publicBaseUrl, or demoTunnel for tests) — skipping; passive settle-indexing (bazaar) still applies');
+      return;
+    }
+
+    // Registration signature must recover to payTo (discovery treats the signer
+    // as the listing owner). If payTo isn't our signer EOA we can't register —
+    // fall back to passive indexing. (P1-1 policy warning.)
+    const signer = this.deps.signer;
+    if (!signer || signer.address.toLowerCase() !== this.payTo!.toLowerCase()) {
+      this.log.warn(
+        `[x402-seller] discovery.register skipped: payTo (${this.payTo}) is not the agent signer EOA` +
+          `${signer ? ` (${signer.address})` : ''}. Set x402Seller.payTo to a wallet you can sign with, ` +
+          'or rely on passive settle-indexing (first paid call lists you automatically).',
+      );
+      return;
+    }
+
+    const assetByNetwork: Record<string, string> = {};
+    for (const [net, a] of Object.entries(this.config.defaultAsset ?? {})) assetByNetwork[net] = a.address;
+
+    await registerSellerServices({
+      client: new DiscoveryClient({ apiUrl }),
+      services: this.services.filter((s) => s.settlement === 'direct'),
+      publicBaseUrl,
+      assetByNetwork,
+      signer,
+      log: this.log,
+    });
+  }
+
+  /** Stop background resources (demo tunnel). */
+  shutdown(): void {
+    this.tunnel?.stop();
+    this.tunnel = undefined;
   }
 }

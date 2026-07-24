@@ -672,15 +672,26 @@ async function start() {
 
     // x402 Seller (optional) — sell compute over HTTP/MCP. Inert unless enabled.
     // A seller failure must never take down the compute worker, so it's guarded.
+    let seller: SellerService | undefined;
     try {
       const cfg = loadConfig();
       if (cfg.x402Seller?.enabled) {
         const containers = buildContainerMetaMap(cfg.containers ?? []);
-        const seller = new SellerService(cfg.x402Seller, {
+        // Discovery listing registration signs with the agent keystore EOA.
+        let signer;
+        try {
+          const { keystore } = await getGlobalKeystore();
+          signer = await keystore.getEOA(new JsonRpcProvider(cfg.chain.rpcUrl));
+        } catch {
+          signer = undefined; // no keystore → registration silently unavailable
+        }
+        seller = new SellerService(cfg.x402Seller, {
           containers,
           runner: new ContainerManager(),
           db: getDatabase(),
           defaultPayTo: cfg.chain.wallet.paymentAddress,
+          signer,
+          port,
           logger,
         });
         await seller.initialize();
@@ -688,12 +699,16 @@ async function start() {
         logger.info('[x402-seller] enabled');
       }
     } catch (sellerError) {
+      seller = undefined;
       logger.error(`[x402-seller] disabled — init failed: ${(sellerError as Error).message}`);
     }
 
     httpServer.listen(port, () => {
       logger.info(`Express server running on http://localhost:${port}`);
       logger.info('WebSocket ready');
+      // Post-listen: demo tunnel + discovery registration (best-effort).
+      seller?.announce().catch((err) =>
+        logger.error(`[x402-seller] announce failed: ${(err as Error).message}`));
     });
 
     // Status logging with error handling and auto-recovery
@@ -744,6 +759,7 @@ async function start() {
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       logger.info(`${signal} received, shutting down...`);
+      seller?.shutdown();
       await manager.shutdown();
       // Checkpoint and close database to ensure WAL is flushed
       const db = getDatabase();

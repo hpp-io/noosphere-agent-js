@@ -37,6 +37,9 @@ export interface SellerServiceEntry {
   /** Emit a verifiable execution receipt with the result. Default false. */
   receipt?: boolean;
 
+  /** Optional discovery metadata — enriches the bazaar extension + listing (ranking). */
+  discovery?: SellerServiceDiscoveryMeta;
+
   // --- onchain-only ---
   /** USDC.e the operator pays Noosphere for compute (atomic string). margin = x402Price - feeAmount. */
   feeAmount?: string;
@@ -57,9 +60,29 @@ export interface X402SellerAssetConfig {
   extra?: Record<string, string>;
 }
 
+/** Per-service discovery enrichment (all optional). */
+export interface SellerServiceDiscoveryMeta {
+  /** Example input object shown to buyers (bazaar `input`). */
+  input?: Record<string, unknown>;
+  /** Example output (bazaar `output.example`). */
+  output?: { example?: unknown };
+  tags?: string[];
+  iconUrl?: string;
+}
+
 export interface X402SellerDiscoveryConfig {
   enabled?: boolean;
+  /** Discovery API base, e.g. "https://discovery.hpp.io" (local dev: http://localhost:4030). */
+  apiUrl?: string;
+  /** Deprecated alias of apiUrl (kept for early configs). */
   url?: string;
+  /**
+   * Public base URL buyers/discovery reach this agent at (production: user-provided).
+   * Overridden by the demo tunnel when x402Seller.demoTunnel is true.
+   */
+  publicBaseUrl?: string;
+  /** Explicitly register listings at boot (path B). Requires payTo to be the signer EOA. */
+  register?: boolean;
 }
 
 export interface X402SellerConfig {
@@ -73,6 +96,11 @@ export interface X402SellerConfig {
   defaultAsset?: Record<string, X402SellerAssetConfig>;
   /** Optional discovery-service registration. */
   discovery?: X402SellerDiscoveryConfig;
+  /**
+   * TEST/DEMO ONLY — start a Cloudflare Quick Tunnel at boot and use its URL as
+   * publicBaseUrl. Ephemeral URL, no SLA; never use in production (see design 04 §8).
+   */
+  demoTunnel?: boolean;
   /** Services offered for sale. */
   services?: RawSellerServiceEntry[];
 }

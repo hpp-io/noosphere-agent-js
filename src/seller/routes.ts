@@ -13,6 +13,7 @@ import { HTTPFacilitatorClient } from '@x402/core/server';
 import type { RoutesConfig, FacilitatorClient } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import type { Network } from '@x402/core/types';
+import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import type { SellerServiceEntry, X402SellerAssetConfig } from './types';
 
 export interface SellerMiddlewareOptions {
@@ -27,6 +28,76 @@ export interface SellerMiddlewareResult {
   middleware: RequestHandler;
   /** Route keys registered (for logging). */
   routeKeys: string[];
+}
+
+/**
+ * Synthesize a minimal example object satisfying a JSON-schema subset
+ * (object/required/properties with primitive types). Used when the seller
+ * declares an inputSchema but no discovery example input.
+ */
+export function synthesizeExample(schema?: Record<string, unknown>): Record<string, unknown> {
+  if (!schema || schema.type !== 'object') return {};
+  const required = Array.isArray(schema.required) ? (schema.required as string[]) : [];
+  const props = (schema.properties ?? {}) as Record<string, { type?: string; enum?: unknown[] }>;
+  const out: Record<string, unknown> = {};
+  for (const key of required) {
+    const p = props[key] ?? {};
+    if (Array.isArray(p.enum) && p.enum.length > 0) out[key] = p.enum[0];
+    else if (p.type === 'number' || p.type === 'integer') out[key] = 0;
+    else if (p.type === 'boolean') out[key] = false;
+    else if (p.type === 'array') out[key] = [];
+    else if (p.type === 'object') out[key] = {};
+    else out[key] = 'example';
+  }
+  return out;
+}
+
+/**
+ * Build the RoutesConfig (accepts + bazaar discovery extension) for the given
+ * direct services. Exported separately so tests can inspect the route shape.
+ */
+export function buildSellerRoutes(
+  directServices: SellerServiceEntry[],
+  opts: SellerMiddlewareOptions,
+): RoutesConfig {
+  const routes: RoutesConfig = {};
+  for (const svc of directServices) {
+    const asset = opts.defaultAsset[svc.network];
+
+    // Bazaar discovery extension: rides the 402 response → echoed into
+    // paymentRequirements → forwarded by the facilitator on settle → the
+    // discovery indexer auto-lists this service (ingest path A, design 04).
+    // A complete declaration raises metadataScore, which feeds ranking.
+    // The SDK validates the example `input` against inputSchema, so when the
+    // seller didn't provide one we synthesize a minimal schema-valid example.
+    const discovery = declareDiscoveryExtension({
+      bodyType: 'json',
+      input: svc.discovery?.input ?? synthesizeExample(svc.inputSchema),
+      inputSchema: svc.inputSchema ?? { type: 'object', additionalProperties: true },
+      output: svc.discovery?.output?.example !== undefined
+        ? { example: svc.discovery.output.example }
+        : { example: { jobId: 'uuid', service: svc.name, output: '<string>' } },
+    });
+
+    (routes as Record<string, unknown>)[`POST /paid/compute/${svc.name}`] = {
+      accepts: [
+        {
+          scheme: 'exact',
+          network: svc.network as Network,
+          payTo: opts.payTo,
+          price: {
+            amount: svc.x402Price,
+            asset: asset.address,
+            extra: { ...(asset.extra ?? {}) },
+          },
+          maxTimeoutSeconds: 600,
+        },
+      ],
+      description: svc.description,
+      extensions: { ...discovery },
+    };
+  }
+  return routes;
 }
 
 /**
@@ -54,27 +125,7 @@ export function buildSellerMiddleware(
     schemes.push({ network: net as Network, server: new ExactEvmScheme() });
   }
 
-  const routes: RoutesConfig = {};
-  for (const svc of directServices) {
-    const asset = opts.defaultAsset[svc.network];
-    (routes as Record<string, unknown>)[`POST /paid/compute/${svc.name}`] = {
-      accepts: [
-        {
-          scheme: 'exact',
-          network: svc.network as Network,
-          payTo: opts.payTo,
-          price: {
-            amount: svc.x402Price,
-            asset: asset.address,
-            extra: { ...(asset.extra ?? {}) },
-          },
-          maxTimeoutSeconds: 600,
-        },
-      ],
-      description: svc.description,
-    };
-  }
-
+  const routes = buildSellerRoutes(directServices, opts);
   const middleware = paymentMiddlewareFromConfig(routes, facilitatorClients, schemes);
   return { middleware, routeKeys: Object.keys(routes) };
 }

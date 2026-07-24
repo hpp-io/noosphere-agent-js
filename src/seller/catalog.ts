@@ -138,6 +138,7 @@ function validateEntry(
     schemes: schemes as string[],
     ...(raw.inputSchema ? { inputSchema: raw.inputSchema } : {}),
     ...(raw.description ? { description: raw.description } : {}),
+    ...(raw.discovery ? { discovery: raw.discovery } : {}),
     ...(raw.receipt !== undefined ? { receipt: !!raw.receipt } : {}),
     ...(raw.feeAmount ? { feeAmount: raw.feeAmount.trim() } : {}),
     ...(raw.verifier ? { verifier: raw.verifier } : {}),
