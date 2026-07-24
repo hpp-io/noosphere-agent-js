@@ -244,6 +244,12 @@ export default function Dashboard() {
             </div>
             <nav className="flex gap-4">
               <a
+                href="/seller"
+                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors"
+              >
+                x402 Seller
+              </a>
+              <a
                 href="/history"
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
               >

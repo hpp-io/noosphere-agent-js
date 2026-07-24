@@ -1059,6 +1059,60 @@ export class AgentDatabase {
     `).all(Math.max(1, Math.min(limit, 500))) as SellerJobRecord[];
   }
 
+  /** Dashboard summary: rolling 24h/30d windows over seller_jobs. */
+  public getSellerSummary(): {
+    calls24h: number;
+    callsTotal: number;
+    settled24h: number;
+    failed24h: number;
+    earnings30d: string;
+    earningsPrev30d: string;
+  } {
+    const r = this.db.prepare(`
+      SELECT
+        COUNT(*) FILTER (WHERE created_at >= datetime('now','-1 day')) AS calls24h,
+        COUNT(*) AS callsTotal,
+        COUNT(*) FILTER (WHERE status = 'settled' AND created_at >= datetime('now','-1 day')) AS settled24h,
+        COUNT(*) FILTER (WHERE status = 'failed'  AND created_at >= datetime('now','-1 day')) AS failed24h,
+        COALESCE(SUM(CAST(amount AS INTEGER)) FILTER (
+          WHERE status = 'settled' AND created_at >= datetime('now','-30 day')), 0) AS earnings30d,
+        COALESCE(SUM(CAST(amount AS INTEGER)) FILTER (
+          WHERE status = 'settled' AND created_at >= datetime('now','-60 day')
+            AND created_at < datetime('now','-30 day')), 0) AS earningsPrev30d
+      FROM seller_jobs
+    `).get() as any;
+    return {
+      calls24h: r.calls24h, callsTotal: r.callsTotal,
+      settled24h: r.settled24h, failed24h: r.failed24h,
+      earnings30d: String(r.earnings30d), earningsPrev30d: String(r.earningsPrev30d),
+    };
+  }
+
+  /** Per-service stats for the dashboard services table. */
+  public getSellerServiceStats(): Array<{ service: string; calls24h: number; callsTotal: number; earnings30d: string }> {
+    const rows = this.db.prepare(`
+      SELECT service,
+        COUNT(*) FILTER (WHERE created_at >= datetime('now','-1 day')) AS calls24h,
+        COUNT(*) AS callsTotal,
+        COALESCE(SUM(CAST(amount AS INTEGER)) FILTER (
+          WHERE status = 'settled' AND created_at >= datetime('now','-30 day')), 0) AS earnings30d
+      FROM seller_jobs GROUP BY service
+    `).all() as any[];
+    return rows.map(r => ({ service: r.service, calls24h: r.calls24h, callsTotal: r.callsTotal, earnings30d: String(r.earnings30d) }));
+  }
+
+  /** Daily settled earnings for the last N days (sparkline series). */
+  public getSellerEarningsSeries(days = 30): Array<{ day: string; earnings: string }> {
+    const rows = this.db.prepare(`
+      SELECT date(created_at) AS day,
+             COALESCE(SUM(CAST(amount AS INTEGER)), 0) AS earnings
+      FROM seller_jobs
+      WHERE status = 'settled' AND created_at >= datetime('now', ?)
+      GROUP BY date(created_at) ORDER BY day ASC
+    `).all(`-${Math.max(1, Math.min(days, 365))} day`) as any[];
+    return rows.map(r => ({ day: r.day, earnings: String(r.earnings) }));
+  }
+
   /** Aggregate earnings per service over settled jobs. */
   public getSellerEarnings(): Array<{ service: string; calls: number; earnings: string }> {
     const rows = this.db.prepare(`

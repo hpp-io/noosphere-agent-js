@@ -21,6 +21,8 @@ const USDCE = process.env.USDCE_ADDRESS ?? '0x401eCb1D350407f13ba348573E5630B836
 const noopDb: SellerJobsDb = {
   saveSellerJob: () => {}, updateSellerJob: () => {},
   getSellerJobs: () => [], getSellerEarnings: () => [],
+  getSellerSummary: () => ({ calls24h: 0, callsTotal: 0, settled24h: 0, failed24h: 0, earnings30d: '0', earningsPrev30d: '0' }),
+  getSellerServiceStats: () => [], getSellerEarningsSeries: () => [],
 };
 const noopRunner = { runContainer: async () => ({ output: 'smoke' }) };
 

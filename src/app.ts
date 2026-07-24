@@ -691,6 +691,7 @@ async function start() {
           db: getDatabase(),
           defaultPayTo: cfg.chain.wallet.paymentAddress,
           signer,
+          rpcUrl: cfg.chain.rpcUrl,
           port,
           logger,
         });

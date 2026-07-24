@@ -15,6 +15,7 @@ import { buildSellerMiddleware } from './routes';
 import { inputGuard } from './validate-input';
 import { makeDirectHandler } from './settlement/direct';
 import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
+import { mountSellerApi } from './api';
 import { startQuickTunnel, type DemoTunnel } from './tunnel';
 import { SellerServiceEntry, X402SellerConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
@@ -34,6 +35,8 @@ export interface SellerServiceDeps {
   timeoutMs?: number;
   /** EOA signer for discovery listing registration (must equal payTo to register). */
   signer?: ListingSigner;
+  /** Chain RPC url for dashboard balance reads (optional). */
+  rpcUrl?: string;
   /** Local HTTP port (used by the demo tunnel). */
   port?: number;
   /** Injectable tunnel starter (tests). Defaults to Cloudflare Quick Tunnel. */
@@ -134,6 +137,7 @@ export class SellerService {
 
     this.mountCatalog(app);
     this.mountDirectRoutes(app);
+    this.mountDashboardApi(app);
 
     const onchain = this.services.filter((s) => s.settlement === 'onchain');
     if (onchain.length > 0) {
@@ -207,6 +211,22 @@ export class SellerService {
     }
 
     this.log.info(`[x402-seller] mounted direct routes — ${routeKeys.join(', ')}`);
+  }
+
+  /** Read-only dashboard API (M5-c) — requires the jobs db. */
+  private mountDashboardApi(app: Express): void {
+    const { db } = this.deps;
+    if (!db) return;
+    mountSellerApi(app, {
+      db,
+      getServices: () => this.services,
+      payTo: this.payTo!,
+      config: this.config,
+      rpcUrl: this.deps.rpcUrl,
+      agentAddress: this.deps.signer?.address,
+      log: this.log,
+    });
+    this.log.info('[x402-seller] mounted dashboard API — GET /api/seller/{summary,wallets,services,jobs,earnings}');
   }
 
   /**

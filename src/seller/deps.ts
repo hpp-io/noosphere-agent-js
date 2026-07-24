@@ -35,6 +35,10 @@ export interface SellerJobsDb {
   }): void;
   getSellerJobs(limit?: number): SellerJobRecord[];
   getSellerEarnings(): Array<{ service: string; calls: number; earnings: string }>;
+  // Dashboard aggregates (M5-c)
+  getSellerSummary(): { calls24h: number; callsTotal: number; settled24h: number; failed24h: number; earnings30d: string; earningsPrev30d: string };
+  getSellerServiceStats(): Array<{ service: string; calls24h: number; callsTotal: number; earnings30d: string }>;
+  getSellerEarningsSeries(days?: number): Array<{ day: string; earnings: string }>;
 }
 
 /** Container to run — matches @noosphere/agent-core ContainerMetadata (fields we use). */
