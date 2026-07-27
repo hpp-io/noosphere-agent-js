@@ -72,6 +72,12 @@ export function buildSellerRoutes(
     // seller didn't provide one we synthesize a minimal schema-valid example.
     const discovery = declareDiscoveryExtension({
       bodyType: 'json',
+      // `method` is stripped from the SDK's input TYPE (route-mount enrichment
+      // is supposed to inject it), but the receipt-gate path serves routes
+      // without that enrichment — and the discovery indexer's strict V2
+      // validation rejects extensions lacking input.method. The runtime
+      // builder accepts it fine, so declare it explicitly.
+      ...( { method: 'POST' } as object),
       input: svc.discovery?.input ?? synthesizeExample(svc.inputSchema),
       inputSchema: svc.inputSchema ?? { type: 'object', additionalProperties: true },
       output: svc.discovery?.output?.example !== undefined
