@@ -120,6 +120,10 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
       // dashboard rows — metadata only, payment-correctness unaffected.)
       const pendingJobs: string[] = [];
 
+      // NOTE: keep this an http(s) URL whenever possible (set
+      // x402Seller.discovery.publicBaseUrl). The bazaar discovery extractor
+      // derives `new URL(u).origin`, which is the literal "null" for
+      // non-special schemes like mcp:// — corrupting indexed listings.
       const paid = createPaymentWrapper(rs, {
         accepts,
         resource: {

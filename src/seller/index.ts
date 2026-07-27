@@ -253,6 +253,11 @@ export class SellerService {
       facilitators: this.config.facilitators ?? {},
       defaultAsset: this.config.defaultAsset ?? {},
       timeoutMs: this.deps.timeoutMs,
+      // Prefer an http(s) base for MCP resource URLs: the bazaar extractor
+      // canonicalizes via `new URL(u).origin`, and WHATWG URL yields the
+      // literal string "null" as origin for non-special schemes (mcp://) —
+      // which corrupted discovery listings to "null/mcp/tools/<tool>".
+      baseUrl: this.config.discovery?.publicBaseUrl,
     }).catch((err) => {
       this.log.error(`[x402-seller] mcp mount failed: ${(err as Error).message}`);
       return { tools: [] };
