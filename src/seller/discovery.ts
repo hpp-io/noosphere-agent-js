@@ -81,6 +81,9 @@ interface ListingSpec {
   priceAtomic: string;
   scheme: string;
   description?: string;
+  serviceName?: string;
+  tags?: string[];
+  iconUrl?: string;
 }
 
 const DEFAULT_RETRY_ATTEMPTS = 6;
@@ -126,6 +129,10 @@ export class DiscoveryClient {
       priceAtomic: svc.x402Price,
       scheme: svc.schemes[0] ?? 'exact',
       description: svc.description,
+      // Human title + discovery ranking metadata (falls back to the service name).
+      serviceName: svc.discovery?.serviceName ?? svc.name,
+      tags: svc.discovery?.tags,
+      iconUrl: svc.discovery?.iconUrl,
     };
 
     const specs: ListingSpec[] = [
@@ -198,6 +205,9 @@ export class DiscoveryClient {
           priceAtomic: spec.priceAtomic,
           scheme: spec.scheme,
           description: spec.description,
+          serviceName: spec.serviceName,
+          tags: spec.tags,
+          iconUrl: spec.iconUrl,
           nonce: ch.json.nonce,
           signature,
         });

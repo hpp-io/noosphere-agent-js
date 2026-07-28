@@ -61,6 +61,8 @@ export interface X402SellerAssetConfig {
 
 /** Per-service discovery enrichment (all optional). */
 export interface SellerServiceDiscoveryMeta {
+  /** Human-readable listing title (discovery `serviceName`). Falls back to the service name. */
+  serviceName?: string;
   /** Example input object shown to buyers (bazaar `input`). */
   input?: Record<string, unknown>;
   /** Example output (bazaar `output.example`). */
