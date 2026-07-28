@@ -93,8 +93,27 @@ describe('DiscoveryClient (M5-b)', () => {
       nonce: 'n-1',
     });
     expect(seen.registers[0].toolName).toBeUndefined();
+    expect(seen.registers[0].serviceName).toBe('sentiment'); // falls back to service name
     // The signature must recover to payTo — discovery's ownership check.
     expect(verifyMessage(`own ${wallet.address} nonce n-1`, seen.registers[0].signature)).toBe(wallet.address);
+  });
+
+  it('forwards serviceName, tags and iconUrl from discovery metadata', async () => {
+    const registers: any[] = [];
+    const fetchImpl = mockFetch({
+      '/listings/challenge': (b) => ({ status: 200, json: { nonce: 'n', message: `own ${b.payTo} nonce n` } }),
+      '/listings/register': (b) => { registers.push(b); return { status: 201, json: { listingState: 'pending' } }; },
+    });
+    const client = new DiscoveryClient({ apiUrl: 'http://disc.local', fetchImpl: fetchImpl as any });
+    const withMeta = svc({ discovery: { serviceName: 'Sentiment (SST-2)', tags: ['nlp', 'sentiment'], iconUrl: 'https://x/i.png' } });
+    const res = await client.register({ service: withMeta, publicBaseUrl: 'https://s.example.com', asset: '0xUSDCe', signer, mcp: true });
+
+    expect(res.every((r) => r.ok)).toBe(true);
+    for (const reg of registers) { // both http and mcp carry the metadata
+      expect(reg.serviceName).toBe('Sentiment (SST-2)');
+      expect(reg.tags).toEqual(['nlp', 'sentiment']);
+      expect(reg.iconUrl).toBe('https://x/i.png');
+    }
   });
 
   it('registers an mcp listing alongside http when mcp:true', async () => {
