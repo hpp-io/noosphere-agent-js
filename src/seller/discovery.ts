@@ -18,6 +18,12 @@ import type { SellerLogger } from './deps';
 export interface ListingSigner {
   address: string;
   signMessage(message: string): Promise<string>;
+  /** EIP-712 signing — required by current discovery challenges. */
+  signTypedData?(
+    domain: Record<string, unknown>,
+    types: Record<string, Array<{ name: string; type: string }>>,
+    value: Record<string, unknown>,
+  ): Promise<string>;
 }
 
 export interface DiscoveryClientOptions {
@@ -68,12 +74,24 @@ export class DiscoveryClient {
         payTo: signer.address,
         action: 'register',
       });
-      if (ch.status >= 400 || !ch.json?.nonce || !ch.json?.message) {
+      if (ch.status >= 400 || !ch.json?.nonce || (!ch.json?.message && !ch.json?.typedData)) {
         return { service: svc.name, ok: false, status: ch.status, error: `challenge failed: ${JSON.stringify(ch.json).slice(0, 200)}` };
       }
 
-      // 2) sign the server-issued message with the payTo EOA
-      const signature = await signer.signMessage(ch.json.message);
+      // 2) sign the server-issued challenge with the payTo EOA.
+      //    Current discovery issues an EIP-712 typedData challenge; older
+      //    deployments issued a plain personal_sign message.
+      let signature: string;
+      const td = ch.json.typedData;
+      if (td) {
+        if (!signer.signTypedData) {
+          return { service: svc.name, ok: false, error: 'discovery requires EIP-712 signing but signer has no signTypedData' };
+        }
+        const { EIP712Domain: _d, ...types } = (td.types ?? {}) as Record<string, Array<{ name: string; type: string }>>;
+        signature = await signer.signTypedData(td.domain, types, td.message);
+      } else {
+        signature = await signer.signMessage(ch.json.message);
+      }
 
       // 3) register
       const resourceUrl = `${args.publicBaseUrl.replace(/\/$/, '')}/paid/compute/${svc.name}`;
