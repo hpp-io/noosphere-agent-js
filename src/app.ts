@@ -48,6 +48,12 @@ async function getGlobalKeystore(): Promise<{ keystore: KeystoreManager; eoaAddr
 }
 
 const app = express();
+// Behind a TLS-terminating proxy/tunnel (e.g. Cloudflare), trust
+// X-Forwarded-* so req.protocol is "https". The x402 middleware builds the
+// 402 resource URL from the request — without this the agent advertises
+// http:// resources, which forks discovery listings away from the
+// registered https URL (and breaks trust accrual on one row).
+app.set('trust proxy', true);
 const httpServer = createServer(app);
 
 // CORS configuration - allow only same hostname (different port)
