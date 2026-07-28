@@ -61,15 +61,15 @@ describe('DiscoveryClient (M5-b)', () => {
     });
   }
 
-  it('challenge → sign(payTo) → register with the listing fields', async () => {
-    const seen: any = {};
+  it('challenge → sign(payTo) → register with the listing fields (http only by default)', async () => {
+    const seen: any = { registers: [] };
     const fetchImpl = mockFetch({
       '/listings/challenge': (b) => {
         seen.challenge = b;
         return { status: 200, json: { nonce: 'n-1', message: `own ${b.payTo} nonce n-1`, expiresAt: 'later' } };
       },
       '/listings/register': (b) => {
-        seen.register = b;
+        seen.registers.push(b);
         return { status: 201, json: { id: 'r-1', listingState: 'pending' } };
       },
     });
@@ -78,10 +78,10 @@ describe('DiscoveryClient (M5-b)', () => {
       service: svc(), publicBaseUrl: 'https://seller.example.com/', asset: '0xUSDCe', signer,
     });
 
-    expect(res.ok).toBe(true);
-    expect(res.state).toBe('pending');
+    expect(res).toHaveLength(1); // no mcp requested
+    expect(res[0]).toMatchObject({ ok: true, transport: 'http', state: 'pending' });
     expect(seen.challenge).toMatchObject({ payTo: wallet.address, action: 'register' });
-    expect(seen.register).toMatchObject({
+    expect(seen.registers[0]).toMatchObject({
       type: 'http',
       resourceUrl: 'https://seller.example.com/paid/compute/sentiment', // trailing slash normalized
       httpMethod: 'POST',
@@ -92,16 +92,66 @@ describe('DiscoveryClient (M5-b)', () => {
       scheme: 'exact',
       nonce: 'n-1',
     });
+    expect(seen.registers[0].toolName).toBeUndefined();
     // The signature must recover to payTo — discovery's ownership check.
-    expect(verifyMessage(`own ${wallet.address} nonce n-1`, seen.register.signature)).toBe(wallet.address);
+    expect(verifyMessage(`own ${wallet.address} nonce n-1`, seen.registers[0].signature)).toBe(wallet.address);
   });
 
-  it('returns ok=false (never throws) on challenge failure', async () => {
-    const fetchImpl = mockFetch({ '/listings/challenge': () => ({ status: 429, json: { error: 'rate' } }) });
+  it('registers an mcp listing alongside http when mcp:true', async () => {
+    const registers: any[] = [];
+    const fetchImpl = mockFetch({
+      '/listings/challenge': (b) => ({ status: 200, json: { nonce: 'n', message: `own ${b.payTo} nonce n` } }),
+      '/listings/register': (b) => { registers.push(b); return { status: 201, json: { listingState: 'pending' } }; },
+    });
     const client = new DiscoveryClient({ apiUrl: 'http://disc.local', fetchImpl: fetchImpl as any });
+    const res = await client.register({
+      service: svc(), publicBaseUrl: 'https://seller.example.com', asset: '0xUSDCe', signer, mcp: true,
+    });
+
+    expect(res.map((r) => r.transport)).toEqual(['http', 'mcp']);
+    expect(res.every((r) => r.ok)).toBe(true);
+    const mcp = registers.find((r) => r.type === 'mcp');
+    expect(mcp).toMatchObject({
+      type: 'mcp',
+      resourceUrl: 'https://seller.example.com/mcp',
+      toolName: 'compute_sentiment',
+      transport: 'streamable-http',
+      network: 'eip155:181228',
+      priceAtomic: '5000',
+      scheme: 'exact',
+    });
+    expect(mcp.httpMethod).toBeUndefined(); // discovery rejects httpMethod on mcp listings
+  });
+
+  it('retries on the register 429 rate limit (fresh challenge each time), then succeeds', async () => {
+    const challenges: any[] = [];
+    let registerCalls = 0;
+    const fetchImpl = mockFetch({
+      '/listings/challenge': (b) => { challenges.push(b); return { status: 200, json: { nonce: `n-${challenges.length}`, message: `own ${b.payTo} nonce n-${challenges.length}` } }; },
+      '/listings/register': () => {
+        registerCalls += 1;
+        return registerCalls < 3 ? { status: 429, json: { error: 'register rate limit' } } : { status: 201, json: { listingState: 'pending' } };
+      },
+    });
+    const sleeps: number[] = [];
+    const client = new DiscoveryClient({
+      apiUrl: 'http://disc.local', fetchImpl: fetchImpl as any,
+      rateLimitRetry: { attempts: 5, delayMs: 1 }, sleepImpl: async (ms) => { sleeps.push(ms); },
+    });
     const res = await client.register({ service: svc(), publicBaseUrl: 'http://x', asset: '0xA', signer });
-    expect(res.ok).toBe(false);
-    expect(res.status).toBe(429);
+
+    expect(res[0].ok).toBe(true);
+    expect(registerCalls).toBe(3);          // 2×429 + 1×201
+    expect(challenges).toHaveLength(3);      // re-challenged each retry (nonce burned on 429)
+    expect(sleeps).toEqual([1, 1]);         // backed off twice
+  });
+
+  it('returns ok=false (never throws) on non-retryable challenge failure', async () => {
+    const fetchImpl = mockFetch({ '/listings/challenge': () => ({ status: 500, json: { error: 'boom' } }) });
+    const client = new DiscoveryClient({ apiUrl: 'http://disc.local', fetchImpl: fetchImpl as any, rateLimitRetry: { attempts: 0 } });
+    const res = await client.register({ service: svc(), publicBaseUrl: 'http://x', asset: '0xA', signer });
+    expect(res[0].ok).toBe(false);
+    expect(res[0].status).toBe(500);
   });
 });
 

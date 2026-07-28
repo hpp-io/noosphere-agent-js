@@ -331,6 +331,22 @@ export class SellerService {
     const assetByNetwork: Record<string, string> = {};
     for (const [net, a] of Object.entries(this.config.defaultAsset ?? {})) assetByNetwork[net] = a.address;
 
+    // Register the MCP transport variant too (unless explicitly disabled), but
+    // only for services whose MCP tool actually mounted — never advertise a tool
+    // that isn't served. mcpReady resolves after the (background) MCP mount.
+    let mcpTools: Set<string> | undefined;
+    if (disc.registerMcp !== false) {
+      try {
+        const timeout = new Promise<{ tools: string[] }>((_, rej) =>
+          setTimeout(() => rej(new Error('mcpReady timeout')), 20_000),
+        );
+        const { tools } = await Promise.race([this.mcpReady, timeout]);
+        mcpTools = new Set(tools);
+      } catch {
+        mcpTools = undefined; // MCP mount failed/slow → HTTP-only registration
+      }
+    }
+
     await registerSellerServices({
       client: new DiscoveryClient({ apiUrl }),
       services: this.services.filter((s) => s.settlement === 'direct'),
@@ -338,6 +354,7 @@ export class SellerService {
       assetByNetwork,
       signer,
       log: this.log,
+      mcpTools,
     });
   }
 

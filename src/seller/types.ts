@@ -82,6 +82,13 @@ export interface X402SellerDiscoveryConfig {
   publicBaseUrl?: string;
   /** Explicitly register listings at boot (path B). Requires payTo to be the signer EOA. */
   register?: boolean;
+  /**
+   * Also register the MCP transport variant (`compute_<name>` tool at `<publicBaseUrl>/mcp`)
+   * for each direct service whose MCP tool actually mounted. Default true when `register`
+   * is on. Set false to advertise HTTP routes only. Doubles registration fan-out —
+   * the client retries on the discovery register rate limit.
+   */
+  registerMcp?: boolean;
 }
 
 export interface X402SellerConfig {
