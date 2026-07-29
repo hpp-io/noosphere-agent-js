@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+# CPU-only torch wheel first (the default PyPI wheel drags in multi-GB CUDA
+# deps on x86_64); transformers<5 pin is REQUIRED here — v5 removed the
+# summarization (seq2seq) pipeline task.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir fastapi uvicorn "transformers<5"
+
+# Bake the model into the image so container startup serves immediately
+# (~460MB, cached under /root/.cache/huggingface).
+RUN python -c "from transformers import pipeline; pipeline('summarization', model='sshleifer/distilbart-cnn-6-6')"
+
+WORKDIR /srv
+COPY app.py .
+
+EXPOSE 8094
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8094"]
