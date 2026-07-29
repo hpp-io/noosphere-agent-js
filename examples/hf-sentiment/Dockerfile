@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-RUN pip install --no-cache-dir fastapi uvicorn transformers torch
+# transformers<5 pin — v5 removed several pipeline tasks (seq2seq et al.)
+RUN pip install --no-cache-dir fastapi uvicorn "transformers<5" torch
 
 # Bake the model into the image so container startup serves immediately
 # (no runtime download; ~268MB, cached under /root/.cache/huggingface).

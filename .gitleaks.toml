@@ -1,0 +1,17 @@
+# gitleaks config — extends the default ruleset and allowlists the well-known
+# Anvil/Foundry deterministic test keys used by the local e2e script. These are
+# publicly documented development keys (not secrets); everything else is caught.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Anvil/Foundry deterministic test private keys (public dev keys)"
+regexTarget = "secret"
+regexes = [
+  '''0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
+  '''0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d''',
+]
+
+[[allowlists]]
+description = "Local e2e harness script (uses only Anvil test keys)"
+paths = ['''scripts/e2e-test\.sh''']

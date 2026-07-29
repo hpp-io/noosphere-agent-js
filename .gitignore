@@ -35,11 +35,16 @@ next-env.d.ts
 
 # noosphere
 .noosphere/
+.noosphere-*/
 .noosphere-v2/
 .noosphere-e2e/
 .noosphere-test/
 config.test.json
 *.keystore.json
+keystore.json
+# ad-hoc demo/scratch configs + keystore scripts (never commit)
+config.*-demo.json
+_*-keystore.mts
 config.json
 config.local.json
 config.seller-e2e.json
@@ -85,3 +90,6 @@ temp/
 *.tmp
 
 docs/
+# python
+__pycache__/
+*.pyc
