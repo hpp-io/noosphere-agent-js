@@ -1,0 +1,73 @@
+name: build-example-images
+
+# MANUAL only (workflow_dispatch). Builds the operated example compute images
+# from examples/<dir>/ and pushes versioned tags to GHCR, so servers pull a
+# pinned image instead of building a local :latest. Not triggered on push/PR —
+# run it deliberately when releasing/refreshing a service image.
+#
+# Data services (crypto-sanctions-screen) re-fetch their source at build time,
+# so re-running this refreshes the OFAC snapshot; the date tag records which day.
+
+on:
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Comma-separated service dirs, or "all"'
+        default: 'all'
+      tag:
+        description: 'Image tag (blank = today, UTC YYYY-MM-DD). ":latest" is always updated too.'
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: hf-embed,                image: example-hf-embed-noosphere }
+          - { dir: hf-rerank,               image: example-hf-rerank-noosphere }
+          - { dir: hf-promptguard,          image: example-hf-promptguard-noosphere }
+          - { dir: crypto-sanctions-screen, image: example-crypto-sanctions-noosphere }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide whether to build this service + resolve tag
+        id: sel
+        run: |
+          want='${{ github.event.inputs.services }}'
+          if [ "$want" != "all" ] && ! printf ',%s,' "$want" | grep -q ",${{ matrix.dir }},"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.dir }} (not in '$want')"
+          else
+            tag='${{ github.event.inputs.tag }}'
+            [ -z "$tag" ] && tag="$(date -u +%Y-%m-%d)"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.sel.outputs.skip != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: steps.sel.outputs.skip != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: examples/${{ matrix.dir }}
+          push: true
+          tags: |
+            ghcr.io/hpp-io/${{ matrix.image }}:${{ steps.sel.outputs.tag }}
+            ghcr.io/hpp-io/${{ matrix.image }}:latest
+
+      - name: Summary
+        if: steps.sel.outputs.skip != 'true'
+        run: |
+          echo "Pushed ghcr.io/hpp-io/${{ matrix.image }}:${{ steps.sel.outputs.tag }} (+ :latest)" >> "$GITHUB_STEP_SUMMARY"
