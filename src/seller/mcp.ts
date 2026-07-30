@@ -99,7 +99,12 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
       ...declareDiscoveryExtension({
         toolName: `compute_${svc.name}`,
         description: svc.description,
-        transport: 'sse',
+        // Must match what we actually mount below (StreamableHTTPServerTransport
+        // on /mcp). Advertising 'sse' sent buyers that honor the declaration to
+        // the wrong transport, and discovery stores whatever the settlement's
+        // bazaar block said — so the first payment for a tool rewrote its listing
+        // to 'sse' and made it unreachable from then on.
+        transport: 'streamable-http',
         inputSchema: svc.inputSchema ?? { type: 'object', additionalProperties: true },
         output: svc.discovery?.output?.example !== undefined
           ? { example: svc.discovery.output.example }
