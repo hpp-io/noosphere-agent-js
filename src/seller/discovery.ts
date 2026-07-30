@@ -76,6 +76,13 @@ interface ListingSpec {
   /** mcp only */
   toolName?: string;
   mcpTransport?: string;
+  /**
+   * mcp only — the endpoint a client connects to. `resourceUrl` has to be the
+   * x402 `resource` our 402 advertises (`<base>/mcp/tools/<tool>`) so discovery
+   * can match settlements to this listing, but that path is not connectable, so
+   * discovery needs the endpoint stated separately (its migration 0014).
+   */
+  mcpServerUrl?: string;
   network: string;
   asset: string;
   priceAtomic: string;
@@ -154,6 +161,7 @@ export class DiscoveryClient {
         // listing, so discovery filed each payment as a new pending
         // (settlement-origin) phantom and re-pinged the operator.
         resourceUrl: `${base}/mcp/tools/compute_${svc.name}`,
+        mcpServerUrl: `${base}/mcp`,
         toolName: `compute_${svc.name}`,
         mcpTransport: 'streamable-http',
       });
@@ -203,6 +211,7 @@ export class DiscoveryClient {
           resourceUrl: spec.resourceUrl,
           httpMethod: spec.httpMethod,
           toolName: spec.toolName,
+          mcpServerUrl: spec.mcpServerUrl,
           bodyType: spec.bodyType,
           transport: spec.mcpTransport,
           network: spec.network,
