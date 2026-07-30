@@ -132,7 +132,10 @@ describe('DiscoveryClient (M5-b)', () => {
     const mcp = registers.find((r) => r.type === 'mcp');
     expect(mcp).toMatchObject({
       type: 'mcp',
-      resourceUrl: 'https://seller.example.com/mcp',
+      // Must equal the x402 resource the MCP 402 advertises (per-tool URL),
+      // not the bare /mcp server root — otherwise settlements never match this
+      // listing and discovery files each as a pending phantom.
+      resourceUrl: 'https://seller.example.com/mcp/tools/compute_sentiment',
       toolName: 'compute_sentiment',
       transport: 'streamable-http',
       network: 'eip155:181228',

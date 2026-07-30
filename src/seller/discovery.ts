@@ -148,7 +148,12 @@ export class DiscoveryClient {
       specs.push({
         ...common,
         transport: 'mcp',
-        resourceUrl: `${base}/mcp`,
+        // Must equal the x402 `resource` the MCP 402 advertises (see mcp.ts:
+        // `${baseUrl}/mcp/tools/compute_<name>`). Registering the bare `/mcp`
+        // server root instead made every MCP settlement fail to match this
+        // listing, so discovery filed each payment as a new pending
+        // (settlement-origin) phantom and re-pinged the operator.
+        resourceUrl: `${base}/mcp/tools/compute_${svc.name}`,
         toolName: `compute_${svc.name}`,
         mcpTransport: 'streamable-http',
       });
