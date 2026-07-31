@@ -25,6 +25,7 @@ import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 
 import { compileInputValidators } from './validate-input';
+import { synthesizeExample } from './routes';
 import type { SellerServiceEntry, X402SellerAssetConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
 
@@ -105,7 +106,22 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
         // bazaar block said — so the first payment for a tool rewrote its listing
         // to 'sse' and made it unreachable from then on.
         transport: 'streamable-http',
-        inputSchema: svc.inputSchema ?? { type: 'object', additionalProperties: true },
+        // Describe what a CALLER passes, not what the container consumes. The
+        // tool signature below is `{ args }` — same payload as the HTTP body,
+        // one level down — so a declaration of the bare service schema tells an
+        // agent the wrong shape, and it has no other way to learn the wrapper.
+        inputSchema: {
+          type: 'object',
+          properties: {
+            args: svc.inputSchema ?? { type: 'object', additionalProperties: true },
+          },
+          // `args` is optional in the tool signature (services that take no
+          // input are called bare), so the declaration says the same.
+          additionalProperties: false,
+        },
+        // A concrete, valid call — the same example the HTTP listing declares,
+        // wrapped the way this transport takes it.
+        example: { args: svc.discovery?.input ?? synthesizeExample(svc.inputSchema) },
         output: svc.discovery?.output?.example !== undefined
           ? { example: svc.discovery.output.example }
           : { example: { jobId: 'uuid', service: svc.name, output: '<string>' } },
