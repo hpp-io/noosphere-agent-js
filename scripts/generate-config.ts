@@ -58,7 +58,7 @@ const NETWORK_PRESETS: Record<string, NetworkPreset> = {
     deploymentBlock: 185172,
     verifierAddress: '0xFF46177E5210A8dc31E98477295d6A91510d67a0',
     proofServiceImage: 'ghcr.io/hpp-io/noosphere-proof-creator:latest',
-    vrfAddress: '0xFd3Fc50bC7b798eDFfCFaB948A1Fd1d614fDA24c',
+    vrfAddress: '0x6d179D718C7B772CA0d6f694308fb22A516a6eFf',
     registryUrl: 'https://raw.githubusercontent.com/hpp-io/noosphere-registry/main/networks/190415.json',
     caip2: 'eip155:190415',
     facilitatorUrl: 'https://facilitator.hpp.io',
