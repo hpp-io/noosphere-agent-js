@@ -53,17 +53,55 @@ export interface SellerServiceDeps {
 export { validateSellerConfig } from './catalog';
 export * from './types';
 export type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
+export { ExternalAwareRunner } from './remote-runner';
+
+/** Raw config.containers[] entry as the seller consumes it. */
+export interface RawContainerEntry {
+  id: string;
+  name?: string;
+  image?: string;
+  port?: string;
+  externalUrl?: string;
+}
+
+/**
+ * Validate config.containers[] entries the seller can reference. Never throws —
+ * returns human-readable errors; offending entries are skipped by
+ * buildContainerMetaMap, so a bad entry disables its services, not the agent.
+ */
+export function validateContainerEntries(containers: RawContainerEntry[]): string[] {
+  const errors: string[] = [];
+  containers.forEach((c, i) => {
+    const where = `containers[${i}]${c?.id ? ` (${c.id})` : ''}`;
+    if (c.externalUrl) {
+      if (c.image) errors.push(`${where}: "externalUrl" and "image" are mutually exclusive`);
+      if (!/^https?:\/\/[^\s]+$/.test(c.externalUrl)) {
+        errors.push(`${where}: "externalUrl" must be an http(s) URL, got "${c.externalUrl}"`);
+      }
+    } else if (!c.image) {
+      errors.push(`${where}: either "image" or "externalUrl" is required`);
+    }
+  });
+  return errors;
+}
 
 /** Build a container-metadata map from raw config.containers[] entries. */
 export function buildContainerMetaMap(
-  containers: Array<{ id: string; name?: string; image: string; port: string }>,
+  containers: RawContainerEntry[],
 ): Map<string, ContainerMeta> {
   const map = new Map<string, ContainerMeta>();
   for (const c of containers) {
+    const name = c.name ?? c.id.slice(0, 10);
+    if (c.externalUrl) {
+      if (c.image) continue; // invalid combo — reported by validateContainerEntries
+      map.set(c.id, { id: c.id, name, externalUrl: c.externalUrl });
+      continue;
+    }
+    if (!c.image) continue; // invalid entry — reported by validateContainerEntries
     const [image, tag] = c.image.includes(':') ? c.image.split(':') : [c.image, 'latest'];
     map.set(c.id, {
       id: c.id,
-      name: c.name ?? c.id.slice(0, 10),
+      name,
       image,
       tag: tag ?? 'latest',
       port: c.port,

@@ -65,10 +65,20 @@ export interface AgentConfig {
   };
   containers: Array<{
     id: string;
-    image: string;
-    port: string;
+    name?: string;
+    /** Local image — required unless externalUrl is set (mutually exclusive). */
+    image?: string;
+    port?: string;
     env?: Record<string, string>;
+    /** Container already running elsewhere; compute is POSTed to `<externalUrl>/computation`. */
+    externalUrl?: string;
   }>;
+  /** Container execution tuning (mirrors src/types ContainerExecutionConfig). */
+  containerExecution?: {
+    timeout?: number;
+    connectionRetries?: number;
+    connectionRetryDelayMs?: number;
+  };
   verifiers?: Array<{
     id: string;
     name: string;

@@ -445,6 +445,16 @@ export class AgentInstance extends EventEmitter {
   private buildContainerMap(): void {
     if (this.config.containers) {
       for (const container of this.config.containers) {
+        // External containers are managed and reached outside this agent
+        // (x402 seller only) — exclude them from lifecycle/on-chain compute.
+        if (container.externalUrl) {
+          logger.info(`[${this.id}] Container ${container.id} is external (${container.externalUrl}) — skipping lifecycle management`);
+          continue;
+        }
+        if (!container.image) {
+          logger.warn(`[${this.id}] Container ${container.id} has neither image nor externalUrl — skipped`);
+          continue;
+        }
         const [image, tag] = container.image.includes(':')
           ? container.image.split(':')
           : [container.image, 'latest'];
