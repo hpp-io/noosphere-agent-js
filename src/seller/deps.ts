@@ -45,9 +45,12 @@ export interface SellerJobsDb {
 export interface ContainerMeta {
   id: string;
   name: string;
-  image: string;
-  tag: string;
-  port: string;
+  /** Local image/port — absent for external containers. */
+  image?: string;
+  tag?: string;
+  port?: string;
+  /** When set, compute is POSTed to `<externalUrl>/computation` instead of a locally managed container. */
+  externalUrl?: string;
 }
 
 /** Runs a container and returns its output. Satisfied by agent-core ContainerManager. */

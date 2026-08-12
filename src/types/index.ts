@@ -49,9 +49,17 @@ export interface ChainConfig {
 export interface ContainerConfig {
   id: string;
   name?: string;
-  image: string;
-  port: string;
+  /** Image to run locally. Required unless externalUrl is set (mutually exclusive). */
+  image?: string;
+  port?: string;
   env?: Record<string, string>;
+  /**
+   * Base URL of a container already running elsewhere (e.g. another tailnet
+   * host). The agent skips lifecycle management and POSTs compute requests to
+   * `<externalUrl>/computation`. x402 direct services only — on-chain compute
+   * cannot reference external containers.
+   */
+  externalUrl?: string;
 }
 
 export interface VerifierConfig {

@@ -8,7 +8,7 @@ import { ethers } from 'ethers';
 import { RegistryManager, KeystoreManager, ContainerManager } from '@noosphere/agent-core';
 import { getAgentManager } from './services/agent-manager';
 import { getMetrics } from './services/metrics';
-import { SellerService, buildContainerMetaMap } from './seller';
+import { SellerService, buildContainerMetaMap, validateContainerEntries, ExternalAwareRunner } from './seller';
 import { getDatabase } from '../lib/db';
 import { loadConfig } from '../lib/config';
 import { logger } from '../lib/logger';
@@ -120,7 +120,8 @@ const io = new SocketIOServer(httpServer, {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+// 12mb: paid compute services carry base64 audio payloads (STT/TTS).
+app.use(express.json({ limit: '12mb' }));
 
 // Helper to serialize BigInt for JSON/WebSocket
 function serializeForJson(obj: any): any {
@@ -682,6 +683,9 @@ async function start() {
     try {
       const cfg = loadConfig();
       if (cfg.x402Seller?.enabled) {
+        for (const err of validateContainerEntries(cfg.containers ?? [])) {
+          logger.error(`[x402-seller] container config: ${err}`);
+        }
         const containers = buildContainerMetaMap(cfg.containers ?? []);
         // Discovery listing registration signs with the agent keystore EOA.
         let signer;
@@ -693,12 +697,15 @@ async function start() {
         }
         seller = new SellerService(cfg.x402Seller, {
           containers,
-          runner: new ContainerManager(),
+          // External-aware: containers with externalUrl are reached over HTTP,
+          // the rest delegate to the local ContainerManager.
+          runner: new ExternalAwareRunner(new ContainerManager()),
           db: getDatabase(),
           defaultPayTo: cfg.chain.wallet.paymentAddress,
           signer,
           rpcUrl: cfg.chain.rpcUrl,
           port,
+          timeoutMs: cfg.containerExecution?.timeout,
           logger,
         });
         await seller.initialize();
