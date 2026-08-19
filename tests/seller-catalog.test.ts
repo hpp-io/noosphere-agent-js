@@ -187,3 +187,19 @@ describe('upto scheme + maxTimeoutSeconds (async job services)', () => {
     expect(accepts.every((a: any) => a.maxTimeoutSeconds === 10800)).toBe(true);
   });
 });
+
+describe('upto 2612 gas-sponsoring declaration', () => {
+  it('declares eip2612GasSponsoring on upto routes only', async () => {
+    const { buildSellerRoutes } = await import('../src/seller/routes');
+    const mk = (name: string, schemes: string[]) => ({
+      name, containerId: 'c', settlement: 'direct', network: 'eip155:190415',
+      schemes, x402Price: '1000',
+    }) as never;
+    const routes: any = buildSellerRoutes([mk('u', ['upto']), mk('e', ['exact'])], {
+      payTo: '0xPay', facilitators: { 'eip155:190415': 'https://f' },
+      defaultAsset: { 'eip155:190415': { address: '0xA' } },
+    });
+    expect(routes['POST /paid/compute/u'].extensions.eip2612GasSponsoring).toBeTruthy();
+    expect(routes['POST /paid/compute/e'].extensions.eip2612GasSponsoring).toBeUndefined();
+  });
+});

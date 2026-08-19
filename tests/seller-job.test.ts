@@ -118,8 +118,8 @@ describe('job poller', () => {
     expect(row.status).toBe('settled');
     expect(row.amount).toBe('180000'); // 1h × 3000/min — actual, not the max
     expect(row.settle_tx).toBe('0xtx');
-    const [, requirements] = gate.processSettlement.mock.calls[0];
-    expect((requirements as { amount: string }).amount).toBe('180000');
+    const requirements = (gate.processSettlement.mock.calls[0] as unknown[])[1] as { amount: string };
+    expect(requirements.amount).toBe('180000');
   });
 
   it('marks failed jobs without settling (buyer not charged)', async () => {
