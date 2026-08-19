@@ -7,6 +7,9 @@ services:
     ports:
       - "127.0.0.1:8095:8095"
     mem_limit: 4g
+    environment:
+      # local harness only — lets the battery serve samples from the docker host
+      STT_ALLOW_PRIVATE_URLS: "1"
 
   hf-tts:
     image: example-hf-tts-noosphere:local

@@ -5,8 +5,10 @@
 #   POST /computation  { "input": "<raw string>", ...parsed-json-fields }
 #   -> respond { "output": <string or object> }
 #
-# Buyer input fields:
-#   audio_b64   required — base64-encoded audio (wav/mp3/m4a/ogg/webm), ≤5MB decoded
+# Buyer input fields (audio_b64 XOR audio_url — exactly one):
+#   audio_b64   base64-encoded audio (wav/mp3/m4a/ogg/webm), ≤8MB decoded
+#   audio_url   http(s) URL of an audio file — fetched server-side (SSRF-guarded),
+#               so isolated clients can transcribe without uploading
 #   language    optional — "auto" (default) or an ISO code like "ko", "en"
 #   timestamps  optional — true to include per-segment start/end times
 #
@@ -17,9 +19,14 @@
 
 import base64
 import io
+import ipaddress
 import os
+import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 import wave
 
 from fastapi import FastAPI, Request
@@ -68,17 +75,97 @@ def decode_to_wav(data: bytes, workdir: str) -> tuple[str, float]:
     return dst, duration
 
 
+DOWNLOAD_TIMEOUT_S = 30
+MAX_REDIRECTS = 3
+
+
+def assert_public_host(url: str) -> None:
+    """SSRF guard: every resolved address must be public. Blocks loopback,
+    private RFC1918, link-local (cloud metadata 169.254.x), CGNAT 100.64/10
+    (this deployment's own tailnet), and their IPv6 equivalents."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"audio_url scheme must be http(s), got {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("audio_url has no host")
+    # Test-only escape hatch for the local e2e harness (its sample server is
+    # on the docker host). NEVER set in production.
+    if os.environ.get("STT_ALLOW_PRIVATE_URLS") == "1":
+        return
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise ValueError(f"audio_url host does not resolve: {e}") from e
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified
+                or (ip.version == 4 and ip in ipaddress.ip_network("100.64.0.0/10"))):
+            raise ValueError(f"audio_url resolves to a non-public address ({ip})")
+
+
+def download_audio(url: str) -> bytes:
+    """Fetch with per-hop SSRF re-validation, a size cap enforced both via
+    Content-Length and during streaming, and a hard timeout."""
+    for _ in range(MAX_REDIRECTS + 1):
+        assert_public_host(url)
+        req = urllib.request.Request(url, headers={"User-Agent": "hf-stt/1.0"}, method="GET")
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            res = opener.open(req, timeout=DOWNLOAD_TIMEOUT_S)
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
+                url = urllib.parse.urljoin(url, e.headers["Location"])
+                continue
+            raise ValueError(f"audio_url fetch failed: HTTP {e.code}")
+        with res:
+            length = res.headers.get("Content-Length")
+            if length and int(length) > MAX_AUDIO_BYTES:
+                raise ValueError(f"audio_url content exceeds {MAX_AUDIO_BYTES // (1024*1024)}MB")
+            chunks, total = [], 0
+            while True:
+                chunk = res.read(256 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_AUDIO_BYTES:
+                    raise ValueError(f"audio_url content exceeds {MAX_AUDIO_BYTES // (1024*1024)}MB")
+                chunks.append(chunk)
+            return b"".join(chunks)
+    raise ValueError(f"audio_url exceeded {MAX_REDIRECTS} redirects")
+
+
 @app.post("/computation")
 async def computation(req: Request):
     body = await req.json()
 
     audio_b64 = body.get("audio_b64")
-    if not isinstance(audio_b64, str) or not audio_b64:
-        return JSONResponse(status_code=400, content={"error": "audio_b64 (base64 string) is required"})
-    try:
-        data = base64.b64decode(audio_b64, validate=True)
-    except Exception:
-        return JSONResponse(status_code=400, content={"error": "audio_b64 is not valid base64"})
+    audio_url = body.get("audio_url")
+    if bool(audio_b64) == bool(audio_url):
+        return JSONResponse(status_code=400, content={"error": "provide exactly one of audio_b64 or audio_url"})
+
+    if audio_url:
+        if not isinstance(audio_url, str):
+            return JSONResponse(status_code=400, content={"error": "audio_url must be a string"})
+        try:
+            data = download_audio(audio_url)
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": f"audio_url fetch failed: {e}"})
+    else:
+        if not isinstance(audio_b64, str):
+            return JSONResponse(status_code=400, content={"error": "audio_b64 must be a string"})
+        try:
+            data = base64.b64decode(audio_b64, validate=True)
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "audio_b64 is not valid base64"})
     if len(data) > MAX_AUDIO_BYTES:
         return JSONResponse(status_code=400, content={"error": f"audio exceeds {MAX_AUDIO_BYTES // (1024*1024)}MB decoded"})
 

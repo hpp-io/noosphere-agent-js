@@ -8,12 +8,19 @@ Korean. No torch, no GPU — CTranslate2 inference, ~1GB RAM resident.
 
 ```
 POST /computation
-  { "audio_b64": "<base64 wav/mp3/m4a/ogg/webm>",   // required, ≤8MB decoded
+  { "audio_b64": "<base64 wav/mp3/m4a/ogg/webm>",   // ≤8MB decoded — exactly one of
+    "audio_url": "https://…/clip.mp3",               //   audio_b64 / audio_url
     "language": "auto" | "ko" | "en" | ...,          // optional, default auto
     "timestamps": false }                             // optional
   -> { "output": { "text", "language", "language_probability",
                    "duration_s", "segments"? } }
 ```
+
+`audio_url` is fetched server-side (http/https only, ≤3 redirects, 8MB cap
+enforced while streaming) behind an SSRF guard that rejects loopback,
+private, link-local (cloud metadata) and CGNAT/tailnet addresses — so
+isolated clients can transcribe without uploading. `STT_ALLOW_PRIVATE_URLS=1`
+disables the guard for the local e2e harness only.
 
 Caps: decoded audio ≤8MB and ≤180s (3 minutes). Violations return 4xx, which
 the agent surfaces as 502 **without settling the payment**.
