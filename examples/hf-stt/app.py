@@ -105,7 +105,7 @@ def assert_public_host(url: str) -> None:
             raise ValueError(f"audio_url resolves to a non-public address ({ip})")
 
 
-def download_audio(url: str) -> bytes:
+def download_audio(url: str, max_bytes: int = MAX_AUDIO_BYTES) -> bytes:
     """Fetch with per-hop SSRF re-validation, a size cap enforced both via
     Content-Length and during streaming, and a hard timeout."""
     for _ in range(MAX_REDIRECTS + 1):
@@ -126,16 +126,16 @@ def download_audio(url: str) -> bytes:
             raise ValueError(f"audio_url fetch failed: HTTP {e.code}")
         with res:
             length = res.headers.get("Content-Length")
-            if length and int(length) > MAX_AUDIO_BYTES:
-                raise ValueError(f"audio_url content exceeds {MAX_AUDIO_BYTES // (1024*1024)}MB")
+            if length and int(length) > max_bytes:
+                raise ValueError(f"audio_url content exceeds {max_bytes // (1024*1024)}MB")
             chunks, total = [], 0
             while True:
                 chunk = res.read(256 * 1024)
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > MAX_AUDIO_BYTES:
-                    raise ValueError(f"audio_url content exceeds {MAX_AUDIO_BYTES // (1024*1024)}MB")
+                if total > max_bytes:
+                    raise ValueError(f"audio_url content exceeds {max_bytes // (1024*1024)}MB")
                 chunks.append(chunk)
             return b"".join(chunks)
     raise ValueError(f"audio_url exceeded {MAX_REDIRECTS} redirects")
@@ -182,10 +182,11 @@ async def computation(req: Request):
         if duration > MAX_DURATION_S:
             return JSONResponse(status_code=400, content={"error": f"audio longer than {MAX_DURATION_S}s cap"})
 
-        segments, info = model.transcribe(
-            wav_path,
-            language=None if language == "auto" else language,
-        )
+        with MODEL_LOCK:
+            segments, info = model.transcribe(
+                wav_path,
+                language=None if language == "auto" else language,
+            )
         out_segments = []
         texts = []
         for seg in segments:  # generator — consumes here
@@ -207,3 +208,165 @@ async def computation(req: Request):
 @app.get("/health")
 async def health():
     return {"ok": True, "model": MODEL_NAME}
+
+
+# ==================== Long-form async jobs ====================
+#
+# Sync /computation caps at 3 minutes because the caller waits. Jobs lift the
+# ceiling for long-form audio (podcasts, meetings — up to 2h) by decoupling
+# submit from result:
+#
+#   POST /jobs {audio_url}     -> {"jobId", "status": "queued"}   (immediate)
+#   GET  /jobs/{jobId}         -> {"status": queued|processing|completed|failed,
+#                                  "durationS"?, "language"?, "text"?, "error"?}
+#
+# A single daemon worker processes jobs serially (sharing MODEL_LOCK with the
+# sync route). Rows live in sqlite (mount /data as a volume so completed-but-
+# unfetched results survive a container restart) with a TTL sweep. The paying
+# gate lives in the selling agent — it verifies an upto authorization at
+# submit and settles the measured minutes when the job completes, so a failed
+# job is simply never settled.
+
+import sqlite3
+import threading
+import time
+import uuid
+
+MAX_JOB_AUDIO_BYTES = int(os.environ.get("STT_JOB_MAX_BYTES", 256 * 1024 * 1024))
+MAX_JOB_DURATION_S = int(os.environ.get("STT_JOB_MAX_DURATION_S", 7200))  # 2h
+JOB_TTL_HOURS = int(os.environ.get("STT_JOB_TTL_HOURS", 72))
+JOBS_DB = os.environ.get("STT_JOBS_DB", "/data/jobs.db")
+
+MODEL_LOCK = threading.Lock()
+
+
+def _jobs_conn() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(JOBS_DB), exist_ok=True)
+    conn = sqlite3.connect(JOBS_DB)
+    conn.execute("""CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        audio_url TEXT NOT NULL,
+        language TEXT,
+        duration_s REAL,
+        text TEXT,
+        error TEXT,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL)""")
+    conn.commit()
+    return conn
+
+
+def _job_update(job_id: str, **fields) -> None:
+    conn = _jobs_conn()
+    sets = ", ".join(f"{k} = ?" for k in fields) + ", updated_at = ?"
+    conn.execute(f"UPDATE jobs SET {sets} WHERE id = ?", [*fields.values(), time.time(), job_id])
+    conn.commit()
+    conn.close()
+
+
+def _process_job(job_id: str, audio_url: str) -> None:
+    _job_update(job_id, status="processing")
+    with tempfile.TemporaryDirectory() as td:
+        data = download_audio(audio_url, max_bytes=MAX_JOB_AUDIO_BYTES)
+        src = os.path.join(td, "input.bin")
+        dst = os.path.join(td, "audio.wav")
+        with open(src, "wb") as f:
+            f.write(data)
+        del data
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error",
+             "-i", src, "-t", str(MAX_JOB_DURATION_S + 10),
+             "-ac", "1", "-ar", "16000", "-f", "wav", dst],
+            capture_output=True, timeout=1800,
+        )
+        if proc.returncode != 0:
+            raise ValueError(f"audio decode failed: {proc.stderr.decode(errors='replace')[:300]}")
+        with wave.open(dst) as w:
+            duration = w.getnframes() / w.getframerate()
+        if duration > MAX_JOB_DURATION_S:
+            raise ValueError(f"audio longer than {MAX_JOB_DURATION_S}s job cap")
+        with MODEL_LOCK:
+            segments, info = model.transcribe(dst)
+            text = "".join(seg.text for seg in segments).strip()
+    _job_update(job_id, status="completed", duration_s=round(duration, 2),
+                language=info.language, text=text)
+
+
+def _worker_loop() -> None:
+    # A restart mid-transcribe leaves 'processing' orphans no worker owns —
+    # fail them once at boot (the agent then simply never settles them).
+    conn = _jobs_conn()
+    conn.execute("UPDATE jobs SET status='failed', error='container restarted mid-job', updated_at=? "
+                 "WHERE status='processing'", [time.time()])
+    conn.commit()
+    conn.close()
+
+    last_sweep = 0.0
+    while True:
+        try:
+            conn = _jobs_conn()
+            if time.time() - last_sweep > 3600:
+                conn.execute("DELETE FROM jobs WHERE updated_at < ?",
+                             [time.time() - JOB_TTL_HOURS * 3600])
+                conn.commit()
+                last_sweep = time.time()
+            row = conn.execute(
+                "SELECT id, audio_url FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            conn.close()
+            if not row:
+                time.sleep(2)
+                continue
+            job_id, audio_url = row
+            try:
+                _process_job(job_id, audio_url)
+            except Exception as e:  # noqa: BLE001 — job failure must not kill the worker
+                _job_update(job_id, status="failed", error=str(e)[:500])
+        except Exception:
+            time.sleep(5)
+
+
+threading.Thread(target=_worker_loop, daemon=True).start()
+
+
+@app.post("/jobs")
+async def submit_job(req: Request):
+    body = await req.json()
+    audio_url = body.get("audio_url")
+    if not isinstance(audio_url, str) or not audio_url:
+        return JSONResponse(status_code=400, content={"error": "audio_url is required for jobs"})
+    try:
+        assert_public_host(audio_url)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    job_id = uuid.uuid4().hex
+    conn = _jobs_conn()
+    conn.execute("INSERT INTO jobs (id, status, audio_url, created_at, updated_at) VALUES (?,?,?,?,?)",
+                 [job_id, "queued", audio_url, time.time(), time.time()])
+    conn.commit()
+    conn.close()
+    return {"jobId": job_id, "status": "queued",
+            "maxDurationS": MAX_JOB_DURATION_S, "ttlHours": JOB_TTL_HOURS}
+
+
+@app.get("/jobs/{job_id}")
+async def job_status(job_id: str):
+    conn = _jobs_conn()
+    row = conn.execute(
+        "SELECT status, language, duration_s, text, error FROM jobs WHERE id = ?", [job_id]
+    ).fetchone()
+    conn.close()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "unknown jobId"})
+    status, language, duration_s, text, error = row
+    out = {"jobId": job_id, "status": status}
+    if duration_s is not None:
+        out["durationS"] = duration_s
+    if language:
+        out["language"] = language
+    if status == "completed":
+        out["text"] = text
+    if error:
+        out["error"] = error
+    return out
