@@ -149,3 +149,41 @@ describe('SellerService', () => {
     });
   });
 });
+
+describe('upto scheme + maxTimeoutSeconds (async job services)', () => {
+  it('carries maxTimeoutSeconds through validation', async () => {
+    const { validateSellerConfig } = await import('../src/seller/catalog');
+    const { services, errors } = validateSellerConfig({
+      enabled: true, payTo: '0x' + '1'.repeat(40),
+      services: [{ name: 'stt-longform', containerId: 'hf-stt', settlement: 'direct',
+        network: 'eip155:190415', schemes: ['upto'], x402Price: '360000', maxTimeoutSeconds: 10800 }],
+    } as never, {});
+    expect(errors).toEqual([]);
+    expect(services[0].schemes).toEqual(['upto']);
+    expect(services[0].maxTimeoutSeconds).toBe(10800);
+  });
+
+  it('rejects a non-positive maxTimeoutSeconds', async () => {
+    const { validateSellerConfig } = await import('../src/seller/catalog');
+    const { errors } = validateSellerConfig({
+      enabled: true, payTo: '0x' + '1'.repeat(40),
+      services: [{ name: 's', containerId: 'c', settlement: 'direct',
+        network: 'eip155:190415', schemes: ['exact'], x402Price: '1', maxTimeoutSeconds: 0 }],
+    } as never, {});
+    expect(errors.join()).toContain('maxTimeoutSeconds');
+  });
+
+  it('advertises one accept per scheme with the service window', async () => {
+    const { buildSellerRoutes } = await import('../src/seller/routes');
+    const routes: any = buildSellerRoutes(
+      [{ name: 'stt-longform', containerId: 'hf-stt', settlement: 'direct',
+         network: 'eip155:190415', schemes: ['upto', 'exact'], x402Price: '360000',
+         maxTimeoutSeconds: 10800 } as never],
+      { payTo: '0xPay', facilitators: { 'eip155:190415': 'https://f' },
+        defaultAsset: { 'eip155:190415': { address: '0xA' } } },
+    );
+    const accepts = routes['POST /paid/compute/stt-longform'].accepts;
+    expect(accepts.map((a: any) => a.scheme)).toEqual(['upto', 'exact']);
+    expect(accepts.every((a: any) => a.maxTimeoutSeconds === 10800)).toBe(true);
+  });
+});

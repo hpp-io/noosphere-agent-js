@@ -19,6 +19,7 @@ import { createPaymentWrapper, extractPaymentFromMeta, x402ResourceServer } from
 import type { FacilitatorClient } from '@x402/core/server';
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { UptoEvmScheme } from '@x402/evm/upto/server';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import type { Network } from '@x402/core/types';
 import type { Express, Request, Response } from 'express';
@@ -73,6 +74,9 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
   const rs = new x402ResourceServer(clients);
   for (const net of new Set(direct.map((s) => s.network))) {
     rs.register(net as Network, new ExactEvmScheme());
+    if (direct.some((s) => s.network === net && s.schemes.includes('upto'))) {
+      rs.register(net as Network, new UptoEvmScheme());
+    }
   }
   await rs.initialize();
 
@@ -88,13 +92,19 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
     const asset = deps.defaultAsset[svc.network];
     if (!asset) throw new Error(`x402Seller: no defaultAsset configured for network "${svc.network}"`);
 
-    const accepts = await rs.buildPaymentRequirements({
-      scheme: 'exact',
-      network: svc.network as Network,
-      payTo: deps.payTo,
-      price: { amount: svc.x402Price, asset: asset.address, extra: { ...(asset.extra ?? {}) } },
-      maxTimeoutSeconds: 600,
-    });
+    const accepts = (
+      await Promise.all(
+        svc.schemes.map((scheme) =>
+          rs.buildPaymentRequirements({
+            scheme,
+            network: svc.network as Network,
+            payTo: deps.payTo,
+            price: { amount: svc.x402Price, asset: asset.address, extra: { ...(asset.extra ?? {}) } },
+            maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
+          }),
+        ),
+      )
+    ).flat();
 
     const extensions = {
       ...declareDiscoveryExtension({

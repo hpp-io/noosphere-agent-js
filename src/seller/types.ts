@@ -27,6 +27,12 @@ export interface SellerServiceEntry {
   x402Price: string;
   /** Accepted x402 schemes in seller priority order. Default ["exact"]. */
   schemes: string[];
+  /**
+   * Payment validity window advertised in the 402 (seconds, default 600).
+   * Also bounds the buyer's signature deadline (upto signs now+this), so
+   * async/job services that settle after long processing need hours here.
+   */
+  maxTimeoutSeconds?: number;
   /** Optional JSON-schema subset validated before payment. */
   inputSchema?: Record<string, unknown>;
   /** Human-readable description (shown in catalog / discovery). */
