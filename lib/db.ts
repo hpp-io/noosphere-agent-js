@@ -1031,6 +1031,22 @@ export class AgentDatabase {
     });
   }
 
+  /**
+   * Stored-output cap. Media services (e.g. TTS) return multi-MB base64
+   * payloads — persisting them verbatim grows the sqlite file by ~10MB per
+   * call. The dashboard only ever shows a preview, so large outputs are
+   * truncated with an explicit marker carrying the original length.
+   */
+  private static readonly SELLER_OUTPUT_MAX_BYTES = 16 * 1024;
+
+  private capSellerOutput(output: string): string {
+    if (Buffer.byteLength(output, 'utf8') <= AgentDatabase.SELLER_OUTPUT_MAX_BYTES) return output;
+    const head = Buffer.from(output, 'utf8')
+      .subarray(0, AgentDatabase.SELLER_OUTPUT_MAX_BYTES)
+      .toString('utf8');
+    return `${head}\n…[truncated: ${Buffer.byteLength(output, 'utf8')} bytes total]`;
+  }
+
   /** Update a job's lifecycle fields. Only provided fields are written. */
   public updateSellerJob(jobId: string, patch: {
     status?: string;
@@ -1044,7 +1060,7 @@ export class AgentDatabase {
     for (const key of ['status', 'output', 'error_message', 'settle_tx', 'payer'] as const) {
       if (patch[key] !== undefined) {
         sets.push(`${key} = @${key}`);
-        params[key] = patch[key];
+        params[key] = key === 'output' ? this.capSellerOutput(patch[key]!) : patch[key];
       }
     }
     if (sets.length === 0) return;
