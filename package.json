@@ -66,6 +66,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/supertest": "^6.0.3",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.0.0",
     "eslint-config-next": "15.1.1",
