@@ -43,21 +43,60 @@ export class EpochManager extends EventEmitter {
   /**
    * Initialize with a signer (from agent's keystore)
    */
+  /** Bound the WS connection attempt — a dead/rejecting endpoint (e.g. an
+   * upstream that 401s the upgrade) never throws from the constructor; the
+   * first RPC call just awaits a socket that will never open, which used to
+   * hang start() (and therefore agent boot) forever. */
+  private static readonly WS_CONNECT_TIMEOUT_MS = 10_000;
+
+  private async createProvider(): Promise<JsonRpcProvider | WebSocketProvider> {
+    if (!this.wsRpcUrl) return new JsonRpcProvider(this.rpcUrl);
+
+    const ws = new WebSocketProvider(this.wsRpcUrl);
+    try {
+      // Socket-level failures (ECONNREFUSED, 401 handshake rejections) are
+      // emitted as 'error' events that ethers leaves unhandled — without a
+      // listener they escape as process-level uncaught exceptions and the
+      // pending RPC never settles. Capture them to fail fast and quietly.
+      const socketError = new Promise<never>((_, reject) => {
+        const sock = ws.websocket as unknown as {
+          on?: (ev: string, fn: (err: unknown) => void) => void;
+          onerror?: ((err: unknown) => void) | null;
+        };
+        const fail = (err: unknown) =>
+          reject(err instanceof Error ? err : new Error(String((err as { message?: string })?.message ?? err)));
+        if (typeof sock.on === 'function') sock.on('error', fail);
+        else sock.onerror = fail;
+      });
+      // getNetwork resolves only once the socket is open; race it against the
+      // socket error + a timeout so a broken endpoint degrades to HTTP
+      // instead of hanging boot.
+      await Promise.race([
+        ws.getNetwork(),
+        socketError,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`WebSocket connect timeout after ${EpochManager.WS_CONNECT_TIMEOUT_MS}ms`)),
+            EpochManager.WS_CONNECT_TIMEOUT_MS),
+        ),
+      ]);
+      logger.info('[EpochManager] Using WebSocket provider for events');
+      return ws;
+    } catch (err) {
+      logger.warn(`[EpochManager] WebSocket unavailable (${(err as Error).message}) — falling back to HTTP provider`);
+      try {
+        await ws.destroy();
+      } catch {
+        /* socket may never have opened */
+      }
+      return new JsonRpcProvider(this.rpcUrl);
+    }
+  }
+
   async start(privateKey: string): Promise<void> {
     logger.info('[EpochManager] Starting...');
 
     // Create provider (prefer WebSocket for event listening)
-    if (this.wsRpcUrl) {
-      try {
-        this.provider = new WebSocketProvider(this.wsRpcUrl);
-        logger.info('[EpochManager] Using WebSocket provider for events');
-      } catch {
-        logger.warn('[EpochManager] WebSocket failed, falling back to HTTP');
-        this.provider = new JsonRpcProvider(this.rpcUrl);
-      }
-    } else {
-      this.provider = new JsonRpcProvider(this.rpcUrl);
-    }
+    this.provider = await this.createProvider();
 
     // Create signer
     this.signer = new Wallet(privateKey, this.provider);
