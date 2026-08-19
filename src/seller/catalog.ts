@@ -127,6 +127,14 @@ function validateEntry(
     }
   }
 
+  // job — async job mode (optional); perMinuteAtomic must be an atomic int
+  if (raw.job !== undefined) {
+    const rate = (raw.job as { perMinuteAtomic?: string })?.perMinuteAtomic;
+    if (typeof rate !== 'string' || !ATOMIC_RE.test(rate)) {
+      errors.push(`${where}: "job.perMinuteAtomic" must be an atomic integer string`);
+    }
+  }
+
   // maxTimeoutSeconds — optional positive integer (seconds)
   if (raw.maxTimeoutSeconds !== undefined
       && (!Number.isInteger(raw.maxTimeoutSeconds) || raw.maxTimeoutSeconds <= 0)) {
@@ -143,6 +151,7 @@ function validateEntry(
     x402Price,
     schemes: schemes as string[],
     ...(raw.maxTimeoutSeconds !== undefined ? { maxTimeoutSeconds: raw.maxTimeoutSeconds } : {}),
+    ...(raw.job ? { job: raw.job } : {}),
     ...(raw.inputSchema ? { inputSchema: raw.inputSchema } : {}),
     ...(raw.description ? { description: raw.description } : {}),
     ...(raw.discovery ? { discovery: raw.discovery } : {}),

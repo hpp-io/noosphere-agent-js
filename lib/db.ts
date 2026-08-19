@@ -1068,6 +1068,70 @@ export class AgentDatabase {
     this.db.prepare(`UPDATE seller_jobs SET ${sets.join(', ')} WHERE job_id = @job_id`).run(params);
   }
 
+  // ==================== x402 Seller Async Jobs ====================
+
+  /** Persist a verified-but-unsettled async job (payment payload included). */
+  public saveAsyncJob(row: {
+    job_id: string;
+    service: string;
+    container_job_id: string;
+    container_url: string;
+    network?: string;
+    scheme?: string;
+    payer?: string;
+    max_amount: string;
+    per_minute_atomic: string;
+    payment_json: string;
+    requirements_json: string;
+    extensions_json: string;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO seller_async_jobs (job_id, service, container_job_id, container_url,
+        network, scheme, payer, max_amount, per_minute_atomic,
+        payment_json, requirements_json, extensions_json, status)
+      VALUES (@job_id, @service, @container_job_id, @container_url,
+        @network, @scheme, @payer, @max_amount, @per_minute_atomic,
+        @payment_json, @requirements_json, @extensions_json, 'queued')
+    `).run({
+      network: null, scheme: null, payer: null,
+      ...row,
+    });
+  }
+
+  public updateAsyncJob(jobId: string, patch: {
+    status?: string;
+    duration_s?: number;
+    amount?: string;
+    settle_tx?: string;
+    error?: string;
+    settle_attempts?: number;
+  }): void {
+    const sets: string[] = [];
+    const params: Record<string, unknown> = { job_id: jobId };
+    for (const key of ['status', 'duration_s', 'amount', 'settle_tx', 'error', 'settle_attempts'] as const) {
+      if (patch[key] !== undefined) {
+        sets.push(`${key} = @${key}`);
+        params[key] = patch[key];
+      }
+    }
+    if (sets.length === 0) return;
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    this.db.prepare(`UPDATE seller_async_jobs SET ${sets.join(', ')} WHERE job_id = @job_id`).run(params);
+  }
+
+  public getAsyncJob(jobId: string): Record<string, unknown> | undefined {
+    return this.db.prepare('SELECT * FROM seller_async_jobs WHERE job_id = ?').get(jobId) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  public listAsyncJobsByStatus(statuses: string[]): Array<Record<string, unknown>> {
+    const marks = statuses.map(() => '?').join(',');
+    return this.db.prepare(
+      `SELECT * FROM seller_async_jobs WHERE status IN (${marks}) ORDER BY created_at`
+    ).all(...statuses) as Array<Record<string, unknown>>;
+  }
+
   /** Recent jobs, newest first. */
   public getSellerJobs(limit = 50): SellerJobRecord[] {
     return this.db.prepare(`
