@@ -174,3 +174,33 @@ describe('job status route', () => {
     expect(res.body.settleTx).toBe('0xt');
   });
 });
+
+describe('job audio proxy', () => {
+  it('streams settled audio and blocks unsettled jobs', async () => {
+    const { makeJobAudioHandler } = await import('../src/seller/settlement/job');
+    const db = memDb();
+    db.saveAsyncJob({
+      job_id: 'a1', service: 'tts-longform', container_job_id: 'ca1',
+      container_url: 'http://c', max_amount: '360000', per_minute_atomic: '3000',
+      payment_json: '{}', requirements_json: '{}', extensions_json: '{}',
+    });
+    const handler = makeJobAudioHandler(db);
+
+    let res = mockRes();
+    res.end = (b: Buffer) => ((res.body = b), res);
+    await handler({ params: { jobId: 'a1' } } as never, res);
+    expect(res.statusCode).toBe(409); // queued → no artifact yet
+
+    db.updateAsyncJob('a1', { status: 'settled' });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, headers: { get: () => 'audio/mpeg' },
+      arrayBuffer: () => Promise.resolve(new Uint8Array([73, 68, 51]).buffer),
+    }) as never;
+    res = mockRes();
+    res.end = (b: Buffer) => ((res.body = b), res);
+    await handler({ params: { jobId: 'a1' } } as never, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('audio/mpeg');
+    expect(Buffer.from(res.body).toString('latin1')).toBe('ID3');
+  });
+});
