@@ -15,6 +15,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { UptoEvmScheme } from '@x402/evm/upto/server';
 import type { Network } from '@x402/core/types';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
+import { declareEip2612GasSponsoringExtension } from '@x402/extensions';
 import type { SellerServiceEntry, X402SellerAssetConfig } from './types';
 
 export interface SellerMiddlewareOptions {
@@ -104,7 +105,13 @@ export function buildSellerRoutes(
         maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
       })),
       description: svc.description,
-      extensions: { ...discovery },
+      // upto pays via Permit2; buyers without a standing allowance need the
+      // eip2612GasSponsoring declaration or their client never bundles the
+      // gasless permit and verify fails with permit2_allowance_required.
+      extensions: {
+        ...discovery,
+        ...(svc.schemes.includes('upto') ? declareEip2612GasSponsoringExtension() : {}),
+      },
     };
   }
   return routes;
