@@ -195,3 +195,29 @@ CREATE TABLE IF NOT EXISTS metadata (
 
 INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '1.0');
 INSERT OR IGNORE INTO metadata (key, value) VALUES ('created_at', datetime('now'));
+
+-- x402 seller: async (long-form) jobs — verified payment held until the
+-- container finishes, then settled at the measured amount (upto semantics).
+CREATE TABLE IF NOT EXISTS seller_async_jobs (
+  job_id            TEXT PRIMARY KEY,
+  service           TEXT NOT NULL,
+  container_job_id  TEXT NOT NULL,
+  container_url     TEXT NOT NULL,
+  network           TEXT,
+  scheme            TEXT,
+  payer             TEXT,
+  max_amount        TEXT NOT NULL,
+  per_minute_atomic TEXT NOT NULL,
+  payment_json      TEXT NOT NULL,
+  requirements_json TEXT NOT NULL,
+  extensions_json   TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'queued',
+  duration_s        REAL,
+  amount            TEXT,
+  settle_tx         TEXT,
+  settle_attempts   INTEGER NOT NULL DEFAULT 0,
+  error             TEXT,
+  created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_seller_async_jobs_status ON seller_async_jobs(status);

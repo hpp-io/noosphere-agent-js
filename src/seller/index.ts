@@ -19,11 +19,14 @@ import { buildSellerMiddleware, buildReceiptGate } from './routes';
 import { inputGuard } from './validate-input';
 import { makeDirectHandler } from './settlement/direct';
 import { makeReceiptHandler } from './settlement/receipt';
+import type { ReceiptPaymentGate } from './settlement/receipt';
+import { makeJobSubmitHandler, makeJobStatusHandler, startJobPoller } from './settlement/job';
+import type { AsyncJobsDb } from './settlement/job';
 import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
 import { mountSellerApi } from './api';
 import { mountSellerMcp } from './mcp';
 import { startQuickTunnel, type DemoTunnel } from './tunnel';
-import { SellerServiceEntry, X402SellerConfig } from './types';
+import { SellerServiceEntry, X402SellerConfig, X402SellerAssetConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
 
 export interface SellerServiceDeps {
@@ -114,6 +117,7 @@ export class SellerService {
   private services: SellerServiceEntry[] = [];
   private readonly log: SellerLogger;
   private initialized = false;
+  private jobPoller?: { stop: () => void };
   private tunnel?: DemoTunnel;
   /** Resolves when the MCP transport is mounted (or skipped). Never rejects. */
   mcpReady: Promise<{ tools: string[] }> = Promise.resolve({ tools: [] });
@@ -231,12 +235,16 @@ export class SellerService {
     // without charging the buyer. Generic JSON-Schema per service's inputSchema.
     app.use(inputGuard(direct));
 
+    // job services (async, settle-on-completion) get their own gate; then
     // receipt:true services use the manual gate (verify → run → settle →
     // receipt); the rest use the auto middleware (serve-then-settle).
-    const withReceipt = direct.filter((s) => s.receipt === true);
-    const plain = direct.filter((s) => s.receipt !== true);
+    const jobServices = direct.filter((s) => s.job !== undefined);
+    const withReceipt = direct.filter((s) => s.receipt === true && s.job === undefined);
+    const plain = direct.filter((s) => s.receipt !== true && s.job === undefined);
 
     const mounted: string[] = [];
+
+    if (jobServices.length > 0) this.mountJobRoutes(app, jobServices, opts, mounted);
 
     if (plain.length > 0) {
       const { middleware, routeKeys } = buildSellerMiddleware(plain, opts);
@@ -249,6 +257,7 @@ export class SellerService {
     const gate = withReceipt.length > 0 ? buildReceiptGate(withReceipt, opts) : undefined;
 
     for (const svc of direct) {
+      if (svc.job !== undefined) continue; // mounted by mountJobRoutes
       const container = containers.get(svc.containerId);
       if (!container) {
         this.log.error(`[x402-seller] no container metadata for "${svc.containerId}" (service ${svc.name}) — skipped`);
@@ -274,6 +283,61 @@ export class SellerService {
   }
 
   /**
+   * Async job routes: paid submit (verify now, settle the measured amount on
+   * completion) + a free poll route. Requires an externalUrl container (the
+   * poller reaches its /jobs API over HTTP) and an async-jobs-capable db.
+   */
+  private mountJobRoutes(
+    app: Express,
+    jobServices: SellerServiceEntry[],
+    opts: { payTo: string; facilitators: Record<string, string>; defaultAsset: Record<string, X402SellerAssetConfig> },
+    mounted: string[],
+  ): void {
+    const { containers, db } = this.deps;
+    const adb = db as unknown as AsyncJobsDb;
+    if (typeof adb?.saveAsyncJob !== 'function') {
+      this.log.error('[x402-seller] job services disabled — db lacks async job support');
+      return;
+    }
+
+    const eligible = jobServices.filter((svc) => {
+      const container = containers?.get(svc.containerId);
+      if (!container?.externalUrl) {
+        this.log.error(`[x402-seller] job service "${svc.name}" requires an externalUrl container — skipped`);
+        return false;
+      }
+      return true;
+    });
+    if (eligible.length === 0) return;
+
+    const gate = buildReceiptGate(eligible, opts);
+    const gateReady = gate.ready.catch((err) => {
+      this.log.error(`[x402-seller] job gate init failed: ${(err as Error).message}`);
+    }) as Promise<void>;
+
+    const svcMap = new Map<string, SellerServiceEntry>();
+    const gates = new Map<string, { gate: ReceiptPaymentGate; ready: Promise<void> }>();
+    for (const svc of eligible) {
+      const containerUrl = containers!.get(svc.containerId)!.externalUrl!;
+      app.post(`/paid/compute/${svc.name}`, makeJobSubmitHandler(svc, {
+        gate: gate.http,
+        gateReady,
+        containerUrl,
+        db: adb,
+        log: this.log,
+      }));
+      mounted.push(`POST /paid/compute/${svc.name} (job)`);
+      svcMap.set(svc.name, svc);
+      gates.set(svc.name, { gate: gate.http, ready: gateReady });
+    }
+
+    app.get('/paid/jobs/:jobId', makeJobStatusHandler(adb));
+    mounted.push('GET /paid/jobs/:jobId (free poll)');
+
+    this.jobPoller = startJobPoller({ services: svcMap, gates, db: adb, log: this.log });
+  }
+
+  /**
    * MCP transport — async (fetches facilitator /supported) so it mounts
    * in the background; a failure disables MCP but never the HTTP routes.
    */
@@ -282,7 +346,7 @@ export class SellerService {
     if (!runner || !db || !containers) return;
     this.mcpReady = mountSellerMcp({
       app,
-      services: this.services,
+      services: this.services.filter((s) => s.job === undefined),
       containers,
       runner,
       db,

@@ -33,6 +33,13 @@ export interface SellerServiceEntry {
    * async/job services that settle after long processing need hours here.
    */
   maxTimeoutSeconds?: number;
+  /**
+   * Async job mode (long-form compute). The container must expose
+   * POST /jobs + GET /jobs/{id} and be referenced via externalUrl. Payment is
+   * verified at submit and settled at the measured amount on completion:
+   * ceil(minutes) × perMinuteAtomic, capped at x402Price (the upto ceiling).
+   */
+  job?: { perMinuteAtomic: string };
   /** Optional JSON-schema subset validated before payment. */
   inputSchema?: Record<string, unknown>;
   /** Human-readable description (shown in catalog / discovery). */
