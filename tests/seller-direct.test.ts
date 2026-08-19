@@ -132,4 +132,22 @@ describe('AgentDatabase seller_jobs', () => {
     expect(llm).toBeTruthy();
     expect(BigInt(llm!.earnings)).toBeGreaterThanOrEqual(10000n);
   });
+
+  it('caps stored output so multi-MB media payloads do not bloat the db', () => {
+    const db = getDatabase();
+    const id = `test-job-cap-${Date.now()}`;
+    const big = 'a'.repeat(5 * 1024 * 1024); // ~5MB, like a base64 TTS wav
+
+    db.saveSellerJob({ job_id: id, service: 'tts', settlement: 'direct', status: 'running' });
+    db.updateSellerJob(id, { status: 'completed', output: big });
+
+    const row = db.getSellerJobs(10).find((j) => j.job_id === id);
+    expect(row).toBeTruthy();
+    expect(row!.output!.length).toBeLessThan(20 * 1024);
+    expect(row!.output).toContain(`…[truncated: ${5 * 1024 * 1024} bytes total]`);
+
+    // small outputs stay verbatim
+    db.updateSellerJob(id, { output: 'small' });
+    expect(db.getSellerJobs(10).find((j) => j.job_id === id)!.output).toBe('small');
+  });
 });
