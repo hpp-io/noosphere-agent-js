@@ -127,6 +127,12 @@ function validateEntry(
     }
   }
 
+  // maxTimeoutSeconds — optional positive integer (seconds)
+  if (raw.maxTimeoutSeconds !== undefined
+      && (!Number.isInteger(raw.maxTimeoutSeconds) || raw.maxTimeoutSeconds <= 0)) {
+    errors.push(`${where}: "maxTimeoutSeconds" must be a positive integer (seconds)`);
+  }
+
   if (errors.length !== before) return null; // this entry had errors
 
   return {
@@ -136,6 +142,7 @@ function validateEntry(
     network,
     x402Price,
     schemes: schemes as string[],
+    ...(raw.maxTimeoutSeconds !== undefined ? { maxTimeoutSeconds: raw.maxTimeoutSeconds } : {}),
     ...(raw.inputSchema ? { inputSchema: raw.inputSchema } : {}),
     ...(raw.description ? { description: raw.description } : {}),
     ...(raw.discovery ? { discovery: raw.discovery } : {}),

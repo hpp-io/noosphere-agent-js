@@ -12,6 +12,7 @@ import type { SchemeRegistration } from '@x402/express';
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import type { RoutesConfig, FacilitatorClient } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { UptoEvmScheme } from '@x402/evm/upto/server';
 import type { Network } from '@x402/core/types';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import type { SellerServiceEntry, X402SellerAssetConfig } from './types';
@@ -86,19 +87,22 @@ export function buildSellerRoutes(
     });
 
     (routes as Record<string, unknown>)[`POST /paid/compute/${svc.name}`] = {
-      accepts: [
-        {
-          scheme: 'exact',
-          network: svc.network as Network,
-          payTo: opts.payTo,
-          price: {
-            amount: svc.x402Price,
-            asset: asset.address,
-            extra: { ...(asset.extra ?? {}) },
-          },
-          maxTimeoutSeconds: 600,
+      // One accept per declared scheme, in the seller's priority order. For
+      // upto, x402Price is the ceiling (max authorization) — the actual settle
+      // amount is decided by the settling code (≤ ceiling).
+      accepts: svc.schemes.map((scheme) => ({
+        scheme,
+        network: svc.network as Network,
+        payTo: opts.payTo,
+        price: {
+          amount: svc.x402Price,
+          asset: asset.address,
+          extra: { ...(asset.extra ?? {}) },
         },
-      ],
+        // Also the buyer's signature validity window (upto signs deadline =
+        // now + maxTimeoutSeconds) — async/job services need hours, not 10min.
+        maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
+      })),
       description: svc.description,
       extensions: { ...discovery },
     };
@@ -129,6 +133,9 @@ export function buildSellerMiddleware(
       facilitatorClients.push(new HTTPFacilitatorClient({ url }));
     }
     schemes.push({ network: net as Network, server: new ExactEvmScheme() });
+    if (directServices.some((s) => s.network === net && s.schemes.includes('upto'))) {
+      schemes.push({ network: net as Network, server: new UptoEvmScheme() });
+    }
   }
 
   const routes = buildSellerRoutes(directServices, opts);
@@ -163,7 +170,12 @@ export function buildReceiptGate(
   }
 
   const server = new x402ResourceServer(Array.from(seenUrls.values()));
-  for (const net of networks) server.register(net as Network, new ExactEvmScheme());
+  for (const net of networks) {
+    server.register(net as Network, new ExactEvmScheme());
+    if (receiptServices.some((s) => s.network === net && s.schemes.includes('upto'))) {
+      server.register(net as Network, new UptoEvmScheme());
+    }
+  }
 
   const routes = buildSellerRoutes(receiptServices, opts);
   const http = new x402HTTPResourceServer(server, routes);
