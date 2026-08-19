@@ -20,7 +20,7 @@ import { inputGuard } from './validate-input';
 import { makeDirectHandler } from './settlement/direct';
 import { makeReceiptHandler } from './settlement/receipt';
 import type { ReceiptPaymentGate } from './settlement/receipt';
-import { makeJobSubmitHandler, makeJobStatusHandler, startJobPoller } from './settlement/job';
+import { makeJobSubmitHandler, makeJobStatusHandler, makeJobAudioHandler, startJobPoller } from './settlement/job';
 import type { AsyncJobsDb } from './settlement/job';
 import { DiscoveryClient, registerSellerServices, type ListingSigner } from './discovery';
 import { mountSellerApi } from './api';
@@ -332,7 +332,8 @@ export class SellerService {
     }
 
     app.get('/paid/jobs/:jobId', makeJobStatusHandler(adb));
-    mounted.push('GET /paid/jobs/:jobId (free poll)');
+    app.get('/paid/jobs/:jobId/audio', makeJobAudioHandler(adb));
+    mounted.push('GET /paid/jobs/:jobId (free poll, +/audio)');
 
     this.jobPoller = startJobPoller({ services: svcMap, gates, db: adb, log: this.log });
   }

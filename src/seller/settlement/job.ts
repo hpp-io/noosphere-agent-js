@@ -163,14 +163,22 @@ export function makeJobStatusHandler(db: AsyncJobsDb) {
       return;
     }
     let text: string | undefined;
+    let audioUrl: string | undefined;
+    let format: string | undefined;
     let resultNote: string | undefined;
     if (row.status === 'settled' || row.status === 'settle_failed') {
       try {
         const r = await fetch(
           `${String(row.container_url).replace(/\/+$/, '')}/jobs/${row.container_job_id}`,
         );
-        if (r.ok) text = ((await r.json()) as { text?: string }).text;
-        else resultNote = 'result expired (container TTL)';
+        if (r.ok) {
+          const state = (await r.json()) as { text?: string; audioPath?: string; format?: string };
+          text = state.text;
+          format = state.format;
+          // Audio results live in the container (tailnet) — surface OUR proxy
+          // path, which is the only one a buyer can reach.
+          if (state.audioPath) audioUrl = `/paid/jobs/${row.job_id}/audio`;
+        } else resultNote = 'result expired (container TTL)';
       } catch {
         resultNote = 'result temporarily unavailable';
       }
@@ -183,9 +191,44 @@ export function makeJobStatusHandler(db: AsyncJobsDb) {
       ...(row.amount ? { amountAtomic: row.amount } : {}),
       ...(row.settle_tx ? { settleTx: row.settle_tx } : {}),
       ...(text !== undefined ? { text } : {}),
+      ...(audioUrl ? { audioUrl, format } : {}),
       ...(resultNote ? { resultNote } : {}),
       ...(row.error ? { error: row.error } : {}),
     });
+  };
+}
+
+/**
+ * Free binary result route: proxies the container's audio artifact (the
+ * container sits on a private network the buyer cannot reach). Only settled
+ * jobs stream — an unsettled job has no paid-for artifact to hand out.
+ */
+export function makeJobAudioHandler(db: AsyncJobsDb) {
+  return async function jobAudioHandler(req: Request, res: Response): Promise<void> {
+    const row = db.getAsyncJob(String(req.params.jobId));
+    if (!row) {
+      res.status(404).json({ error: 'unknown jobId' });
+      return;
+    }
+    if (row.status !== 'settled' && row.status !== 'settle_failed') {
+      res.status(409).json({ error: `job is ${row.status} — audio available once settled` });
+      return;
+    }
+    try {
+      const r = await fetch(
+        `${String(row.container_url).replace(/\/+$/, '')}/jobs/${row.container_job_id}/audio`,
+      );
+      if (!r.ok) {
+        res.status(404).json({ error: 'audio expired (container TTL)' });
+        return;
+      }
+      res.status(200);
+      res.setHeader('content-type', r.headers.get('content-type') ?? 'audio/mpeg');
+      res.setHeader('content-disposition', `attachment; filename="${row.job_id}.mp3"`);
+      res.end(Buffer.from(await r.arrayBuffer()));
+    } catch {
+      res.status(502).json({ error: 'audio temporarily unavailable' });
+    }
   };
 }
 

@@ -163,3 +163,198 @@ async def computation(req: Request):
 @app.get("/health")
 async def health():
     return {"ok": True, "voices": sorted(KOKORO_VOICES) + ["ko"]}
+
+
+# ==================== Long-form async jobs ====================
+#
+# The sync route caps at 2,000 chars because the caller waits and the audio
+# rides one JSON response. Jobs lift both limits for narration-length text
+# (articles, newsletters, audiobook chapters — up to 50,000 chars):
+#
+#   POST /jobs {text, voice?, speed?}   -> {"jobId", "status": "queued"}
+#   GET  /jobs/{jobId}                  -> {"status", "durationS"?, "error"?}
+#   GET  /jobs/{jobId}/audio            -> audio/mpeg binary (mp3)
+#
+# The worker splits the text on sentence boundaries into engine-sized chunks,
+# synthesizes serially (sharing the engines with the sync route), concatenates
+# the audio and encodes one mp3 under /data (mount a volume). The paying agent
+# bills the reported output duration (upto: per-minute, settle-on-completion).
+
+import re as _re
+import sqlite3
+import threading
+import time
+import uuid
+
+MAX_JOB_TEXT_CHARS = int(os.environ.get("TTS_JOB_MAX_CHARS", 50_000))
+MAX_JOB_OUTPUT_S = int(os.environ.get("TTS_JOB_MAX_OUTPUT_S", 7200))  # 2h of audio
+JOB_TTL_HOURS = int(os.environ.get("TTS_JOB_TTL_HOURS", 72))
+JOBS_DB = os.environ.get("TTS_JOBS_DB", "/data/jobs.db")
+AUDIO_DIR = os.environ.get("TTS_JOB_AUDIO_DIR", "/data/audio")
+
+SYNTH_LOCK = threading.Lock()
+
+
+def _jobs_conn() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(JOBS_DB), exist_ok=True)
+    conn = sqlite3.connect(JOBS_DB)
+    conn.execute("""CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        text TEXT NOT NULL,
+        voice TEXT NOT NULL,
+        speed REAL NOT NULL,
+        duration_s REAL,
+        error TEXT,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL)""")
+    conn.commit()
+    return conn
+
+
+def _job_update(job_id: str, **fields) -> None:
+    conn = _jobs_conn()
+    sets = ", ".join(f"{k} = ?" for k in fields) + ", updated_at = ?"
+    conn.execute(f"UPDATE jobs SET {sets} WHERE id = ?", [*fields.values(), time.time(), job_id])
+    conn.commit()
+    conn.close()
+
+
+def chunk_text(text: str, limit: int) -> list:
+    """Split on sentence boundaries (fall back to hard cuts) into ≤limit chunks."""
+    sentences = _re.split(r"(?<=[.!?。！？…])\s+|\n{2,}", text)
+    chunks, cur = [], ""
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        while len(s) > limit:  # pathological sentence — hard cut
+            head, s = s[:limit], s[limit:]
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            chunks.append(head)
+        if len(cur) + len(s) + 1 > limit:
+            chunks.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _process_job(job_id: str, text: str, voice: str, speed: float) -> None:
+    _job_update(job_id, status="processing")
+    is_ko = voice == "ko" or voice.startswith("ko_")
+    limit = MAX_TEXT_CHARS_KO if is_ko else MAX_TEXT_CHARS
+    parts = []
+    total_s = 0.0
+    for chunk in chunk_text(text, limit):
+        with SYNTH_LOCK:
+            audio = synth_melo(chunk, speed) if is_ko else synth_kokoro(chunk, voice, speed)
+        parts.append(audio)
+        total_s += len(audio) / TARGET_SR
+        if total_s > MAX_JOB_OUTPUT_S:
+            raise ValueError(f"output longer than {MAX_JOB_OUTPUT_S}s cap")
+    joined = np.concatenate(parts) if len(parts) > 1 else parts[0]
+    duration = len(joined) / TARGET_SR
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    mp3 = encode_mp3(encode_wav(joined, TARGET_SR))
+    with open(os.path.join(AUDIO_DIR, f"{job_id}.mp3"), "wb") as f:
+        f.write(mp3)
+    _job_update(job_id, status="completed", duration_s=round(duration, 2))
+
+
+def _worker_loop() -> None:
+    conn = _jobs_conn()
+    conn.execute("UPDATE jobs SET status='failed', error='container restarted mid-job', updated_at=? "
+                 "WHERE status='processing'", [time.time()])
+    conn.commit()
+    conn.close()
+
+    last_sweep = 0.0
+    while True:
+        try:
+            conn = _jobs_conn()
+            if time.time() - last_sweep > 3600:
+                old = conn.execute("SELECT id FROM jobs WHERE updated_at < ?",
+                                   [time.time() - JOB_TTL_HOURS * 3600]).fetchall()
+                for (jid,) in old:
+                    try:
+                        os.remove(os.path.join(AUDIO_DIR, f"{jid}.mp3"))
+                    except OSError:
+                        pass
+                conn.execute("DELETE FROM jobs WHERE updated_at < ?",
+                             [time.time() - JOB_TTL_HOURS * 3600])
+                conn.commit()
+                last_sweep = time.time()
+            row = conn.execute(
+                "SELECT id, text, voice, speed FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            conn.close()
+            if not row:
+                time.sleep(2)
+                continue
+            job_id, text, voice, speed = row
+            try:
+                _process_job(job_id, text, voice, speed)
+            except Exception as e:  # noqa: BLE001 — job failure must not kill the worker
+                _job_update(job_id, status="failed", error=str(e)[:500])
+        except Exception:
+            time.sleep(5)
+
+
+threading.Thread(target=_worker_loop, daemon=True).start()
+
+
+@app.post("/jobs")
+async def submit_job(req: Request):
+    body = await req.json()
+    text = body.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return JSONResponse(status_code=400, content={"error": "text is required for jobs"})
+    if len(text) > MAX_JOB_TEXT_CHARS:
+        return JSONResponse(status_code=400, content={"error": f"text longer than {MAX_JOB_TEXT_CHARS} chars job cap"})
+    voice = body.get("voice") or DEFAULT_VOICE
+    if not (voice == "ko" or voice.startswith("ko_") or voice in KOKORO_VOICES):
+        return JSONResponse(status_code=400, content={"error": f"unknown voice '{voice}'",
+                                                      "voices": sorted(KOKORO_VOICES) + ["ko"]})
+    speed = body.get("speed", 1.0)
+    if not isinstance(speed, (int, float)):
+        return JSONResponse(status_code=400, content={"error": "speed must be a number"})
+    job_id = uuid.uuid4().hex
+    conn = _jobs_conn()
+    conn.execute("INSERT INTO jobs (id, status, text, voice, speed, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                 [job_id, "queued", text, voice, max(0.5, min(2.0, float(speed))), time.time(), time.time()])
+    conn.commit()
+    conn.close()
+    return {"jobId": job_id, "status": "queued", "maxOutputS": MAX_JOB_OUTPUT_S, "ttlHours": JOB_TTL_HOURS}
+
+
+@app.get("/jobs/{job_id}")
+async def job_status(job_id: str):
+    conn = _jobs_conn()
+    row = conn.execute("SELECT status, duration_s, error FROM jobs WHERE id = ?", [job_id]).fetchone()
+    conn.close()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "unknown jobId"})
+    status, duration_s, error = row
+    out = {"jobId": job_id, "status": status}
+    if duration_s is not None:
+        out["durationS"] = duration_s
+    if status == "completed":
+        out["audioPath"] = f"/jobs/{job_id}/audio"
+        out["format"] = "mp3"
+    if error:
+        out["error"] = error
+    return out
+
+
+@app.get("/jobs/{job_id}/audio")
+async def job_audio(job_id: str):
+    from fastapi.responses import FileResponse
+    path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+    if not os.path.exists(path):
+        return JSONResponse(status_code=404, content={"error": "no audio (job incomplete or expired)"})
+    return FileResponse(path, media_type="audio/mpeg", filename=f"{job_id}.mp3")
