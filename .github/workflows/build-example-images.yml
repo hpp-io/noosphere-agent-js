@@ -33,6 +33,8 @@ jobs:
           - { dir: hf-rerank,               image: example-hf-rerank-noosphere }
           - { dir: hf-promptguard,          image: example-hf-promptguard-noosphere }
           - { dir: crypto-sanctions-screen, image: example-crypto-sanctions-noosphere }
+          - { dir: hf-stt,                  image: example-hf-stt-noosphere }
+          - { dir: hf-tts,                  image: example-hf-tts-noosphere }
     steps:
       - uses: actions/checkout@v4
 
