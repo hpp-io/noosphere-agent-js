@@ -112,6 +112,34 @@ def main():
     for lang, vals in ers.items():
         add(f"\n- {lang} mean ER: **{sum(vals)/len(vals):.3f}** (n={len(vals)})")
 
+    # ---------- STT via audio_url (local http server serves a sample) ----------
+    add("\n## STT audio_url input\n")
+    import functools, http.server, threading
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler,
+                                directory=os.path.join(HERE, "samples"))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    try:
+        # NOTE: the container's SSRF guard blocks loopback — for the local
+        # battery we run the container with STT_ALLOW_PRIVATE_URLS=1.
+        dt, out = call(args.stt, {"audio_url": f"http://host.docker.internal:{port}/ko-f-normal.wav"})
+        ref = manifest["ko-f-normal"]
+        er = error_rate(ref["ref"], out["text"], "ko")
+        add(f"- url fetch+transcribe: CER {er:.2f} {'OK' if er <= 0.15 else 'FAIL ⚠️'} ({dt:.1f}s)")
+        if er > 0.15:
+            failures.append(f"STT audio_url: CER {er:.2f}")
+        ok, code = expect_4xx(args.stt, {"audio_b64": "QUJD", "audio_url": "http://x/y"})
+        add(f"- both inputs -> {code} {'OK' if ok else 'FAIL'}")
+        if not ok:
+            failures.append("STT guard: both inputs not rejected")
+        ok, code = expect_4xx(args.stt, {})
+        add(f"- neither input -> {code} {'OK' if ok else 'FAIL'}")
+        if not ok:
+            failures.append("STT guard: empty input not rejected")
+    finally:
+        httpd.shutdown()
+
     # ---------- STT guards ----------
     add("\n## STT guards (must reject without charging)\n")
     ok, code = expect_4xx(args.stt, {"audio_b64": base64.b64encode(b"garbage" * 100).decode()})
