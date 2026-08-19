@@ -93,3 +93,8 @@ docs/
 # python
 __pycache__/
 *.pyc
+
+# e2e-local harness artifacts (regenerable) + local agent run dir (holds keys)
+examples/e2e-local/samples/
+examples/e2e-local/out/
+examples/e2e-local/agent-run/
