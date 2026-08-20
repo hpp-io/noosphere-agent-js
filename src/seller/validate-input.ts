@@ -2,10 +2,13 @@
  * x402 Seller — input validation.
  *
  * Generic JSON-Schema validation (ajv) of the request body against each
- * service's `inputSchema`, BEFORE the payment challenge. Invalid input is
- * rejected with 400 so the buyer is never asked to pay for a request the
- * container could not have served. Schemas are per-service config — no
- * service-specific validation logic lives in code here.
+ * service's `inputSchema`. Only requests that carry a payment header are
+ * validated: rejecting a paid attempt with 400 spares the buyer from signing
+ * for a request the container could not have served, while an unpaid request
+ * must fall through to the payment gate so it gets the 402 challenge —
+ * discovery probes send an empty body and read the price/metadata off that
+ * 402, so a 400 here would delist the service's price. Schemas are
+ * per-service config — no service-specific validation logic lives in code.
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
@@ -50,6 +53,8 @@ export function inputGuard(services: SellerServiceEntry[]): RequestHandler {
     if (!match) return next();
     const validate = validators.get(match[1]);
     if (!validate) return next();
+    // Unpaid request → let the payment gate answer with the 402 challenge.
+    if (!req.header('payment-signature') && !req.header('x-payment')) return next();
 
     if (validate(req.body ?? {})) return next();
 

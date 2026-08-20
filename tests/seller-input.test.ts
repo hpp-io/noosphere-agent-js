@@ -12,8 +12,14 @@ const withSchema = (schema: Record<string, unknown>): SellerServiceEntry => ({
   inputSchema: schema,
 });
 
-function run(guard: ReturnType<typeof inputGuard>, method: string, path: string, body: unknown) {
-  const req: any = { method, path, body };
+function run(
+  guard: ReturnType<typeof inputGuard>,
+  method: string,
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = { 'payment-signature': '0xsig' },
+) {
+  const req: any = { method, path, body, header: (n: string) => headers[n.toLowerCase()] };
   const res: any = {
     statusCode: 200, body: undefined,
     status(c: number) { res.statusCode = c; return res; },
@@ -52,7 +58,7 @@ describe('inputGuard', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('rejects invalid input with 400 BEFORE payment', () => {
+  it('rejects invalid PAID input with 400 before verification', () => {
     const guard = inputGuard([withSchema(schema)]);
     const { res, next } = run(guard, 'POST', '/paid/compute/llm', { model: 'x' }); // missing prompt
     expect(next).not.toHaveBeenCalled();
@@ -60,6 +66,22 @@ describe('inputGuard', () => {
     expect(res.body.error).toBe('invalid_input');
     expect(res.body.service).toBe('llm');
     expect(res.body.details.join(' ')).toMatch(/prompt/);
+  });
+
+  it('lets an UNPAID request through to the payment gate (402 challenge, not 400)', () => {
+    const guard = inputGuard([withSchema(schema)]);
+    // Discovery probes POST an empty body with no payment header and read the
+    // price off the 402 — a 400 here would erase the listing's price.
+    const { res, next } = run(guard, 'POST', '/paid/compute/llm', {}, {});
+    expect(next).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('accepts the v1 x-payment header as a paid attempt', () => {
+    const guard = inputGuard([withSchema(schema)]);
+    const { res, next } = run(guard, 'POST', '/paid/compute/llm', { model: 'x' }, { 'x-payment': '0xp' });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
   });
 
   it('rejects unknown properties when additionalProperties is false', () => {
