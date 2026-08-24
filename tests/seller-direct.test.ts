@@ -97,15 +97,34 @@ describe('makeDirectHandler', () => {
     expect(settled[1].settle_tx).toBe('0xdeadbeef');
   });
 
-  it('returns 502 and records failed (no settle) when compute fails', async () => {
+  it('returns 500 and records failed (no settle) when compute fails', async () => {
     const runner = { runContainer: vi.fn().mockRejectedValue(new Error('container down')) };
     const handler = makeDirectHandler(svc(), { runner, container, db: db as any, log: noopLogger });
     const res = mockRes();
 
     await handler(mockReq({ prompt: 'x' }), res);
 
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(500);
     expect(res.body).toMatchObject({ error: 'compute_failed' });
+    expect(res.body.detail).toBeUndefined();
+    const statuses = db.updateSellerJob.mock.calls.map((c: any[]) => c[1].status);
+    expect(statuses).toContain('failed');
+    expect(statuses).not.toContain('settled');
+  });
+
+  it('returns 400 with the container reason when the container rejects the input', async () => {
+    const runner = {
+      runContainer: vi.fn().mockRejectedValue(
+        new Error('Container HTTP error 400: {"error":"audio_url host does not resolve"}'),
+      ),
+    };
+    const handler = makeDirectHandler(svc(), { runner, container, db: db as any, log: noopLogger });
+    const res = mockRes();
+
+    await handler(mockReq({ prompt: 'x' }), res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_input', detail: 'audio_url host does not resolve' });
     const statuses = db.updateSellerJob.mock.calls.map((c: any[]) => c[1].status);
     expect(statuses).toContain('failed');
     expect(statuses).not.toContain('settled');

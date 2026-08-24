@@ -110,17 +110,33 @@ describe('makeReceiptHandler (M2b)', () => {
     expect(db.saveSellerJob).not.toHaveBeenCalled();
   });
 
-  it('compute failure → 502, settle never attempted (buyer not charged)', async () => {
+  it('compute failure → 500, settle never attempted (buyer not charged)', async () => {
     const gate = verifiedGate();
     const runner = { runContainer: vi.fn().mockRejectedValue(new Error('boom')) };
     const { req, res } = mockReqRes({ text: 'x' });
 
     await makeReceiptHandler(svc, deps(gate, runner) as any)(req, res);
 
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(500);
     expect(gate.processSettlement).not.toHaveBeenCalled();
     const statuses = db.updateSellerJob.mock.calls.map((c: any[]) => c[1].status);
     expect(statuses).toContain('failed');
+  });
+
+  it('container 4xx → 400 with the container reason, settle never attempted', async () => {
+    const gate = verifiedGate();
+    const runner = {
+      runContainer: vi.fn().mockRejectedValue(
+        new Error('Container HTTP error 400: {"error":"audio decode failed"}'),
+      ),
+    };
+    const { req, res } = mockReqRes({ text: 'x' });
+
+    await makeReceiptHandler(svc, deps(gate, runner) as any)(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_input', detail: 'audio decode failed' });
+    expect(gate.processSettlement).not.toHaveBeenCalled();
   });
 
   it('settle failure after compute → gate error forwarded, job completed+settle_failed', async () => {
