@@ -13,6 +13,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import type { SellerServiceEntry } from '../types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from '../deps';
+import { classifyComputeFailure } from '../compute-error';
 
 export interface DirectHandlerDeps {
   runner: ContainerRunner;
@@ -81,7 +82,8 @@ export function makeDirectHandler(svc: SellerServiceEntry, deps: DirectHandlerDe
       deps.log.error(`[x402-seller] compute failed for ${svc.name} (job ${jobId}): ${message}`);
       deps.db.updateSellerJob(jobId, { status: 'failed', error_message: message });
       // >=400 ⇒ middleware skips settle ⇒ buyer not charged.
-      res.status(502).json({ jobId, error: 'compute_failed' });
+      const failure = classifyComputeFailure(err);
+      res.status(failure.status).json({ jobId, error: failure.error, ...(failure.detail ? { detail: failure.detail } : {}) });
     }
   };
 }

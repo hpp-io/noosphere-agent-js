@@ -10,7 +10,8 @@
  * buyer — or any third party — can verify what the payment bought. This is the
  * direct-mode substitute for an on-chain verifier.
  *
- * Failure semantics: compute error → 502 before settle (buyer not charged);
+ * Failure semantics: compute error → 400 (container rejected the input) or
+ * 500 before settle (buyer not charged);
  * settle error after compute → forward the gate's error response, job recorded
  * `completed` with `settle_failed` (work done, payment not captured).
  */
@@ -21,6 +22,7 @@ import { ExpressAdapter } from '@x402/express';
 import { buildExecutionReceipt } from '@hpp-io/x402-mcp-bridge/receipt';
 import type { SellerServiceEntry } from '../types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from '../deps';
+import { classifyComputeFailure } from '../compute-error';
 
 /** Narrow gate surface (x402HTTPResourceServer) — injectable for tests. */
 export interface ReceiptPaymentGate {
@@ -111,7 +113,8 @@ export function makeReceiptHandler(svc: SellerServiceEntry, deps: ReceiptHandler
       const message = (err as Error).message;
       deps.log.error(`[x402-seller] compute failed for ${svc.name} (job ${jobId}): ${message}`);
       deps.db.updateSellerJob(jobId, { status: 'failed', error_message: message });
-      res.status(502).json({ jobId, error: 'compute_failed' }); // not settled ⇒ not charged
+      const failure = classifyComputeFailure(err); // not settled ⇒ not charged
+      res.status(failure.status).json({ jobId, error: failure.error, ...(failure.detail ? { detail: failure.detail } : {}) });
       return;
     }
 

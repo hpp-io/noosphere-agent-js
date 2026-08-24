@@ -26,6 +26,7 @@ import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 
 import { compileInputValidators } from './validate-input';
+import { classifyComputeFailure } from './compute-error';
 import { synthesizeExample } from './routes';
 import type { SellerServiceEntry, X402SellerAssetConfig } from './types';
 import type { ContainerMeta, ContainerRunner, SellerJobsDb, SellerLogger } from './deps';
@@ -217,7 +218,12 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
             const message = (err as Error).message;
             deps.log.error(`[x402-seller] mcp compute failed for ${name} (job ${jobId}): ${message}`);
             deps.db.updateSellerJob(jobId, { status: 'failed', error_message: message });
-            return { content: [{ type: 'text' as const, text: 'compute_failed' }], isError: true };
+            // isError cancels the payment either way; give input errors a reason.
+            const failure = classifyComputeFailure(err);
+            return {
+              content: [{ type: 'text' as const, text: failure.detail ? `${failure.error}: ${failure.detail}` : failure.error }],
+              isError: true,
+            };
           }
         }),
       );
