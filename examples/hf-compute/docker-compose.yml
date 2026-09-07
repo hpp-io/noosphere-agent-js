@@ -1,0 +1,27 @@
+# hf-compute — paid compute containers resold by the selling agent on another
+# host over the tailnet (containers[].externalUrl). Bound to the Tailscale IP only:
+# never expose these on 0.0.0.0 — direct calls bypass x402 payment.
+#
+# HF_BIND_IP comes from ./.env (untracked) and MUST be the host's Tailscale IP.
+# The `:?` guard makes compose refuse to start when it is unset, so a missing
+# .env fails closed instead of silently publishing on every interface.
+services:
+  hf-stt:
+    image: example-hf-stt-noosphere:latest
+    container_name: hf-stt
+    restart: always
+    ports:
+      - "${HF_BIND_IP:?set HF_BIND_IP to the Tailscale IP in .env — never 0.0.0.0}:8095:8095"
+    mem_limit: 4g
+    volumes:
+      - ./stt-data:/data
+
+  hf-tts:
+    image: example-hf-tts-noosphere:latest
+    container_name: hf-tts
+    restart: always
+    ports:
+      - "${HF_BIND_IP:?set HF_BIND_IP to the Tailscale IP in .env — never 0.0.0.0}:8096:8096"
+    mem_limit: 8g
+    volumes:
+      - ./tts-data:/data
