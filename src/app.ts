@@ -56,6 +56,23 @@ const app = express();
 app.set('trust proxy', true);
 const httpServer = createServer(app);
 
+// x402 paid routes are a public, signature-authenticated API: any web origin (e.g. the HPP
+// wallet app) must be able to read the 402 requirements and the settlement receipt. No
+// credentials are involved, so a wildcard is safe. Handled before the same-host CORS below.
+const X402_EXPOSED_HEADERS = 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE';
+app.use('/paid', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, PAYMENT-SIGNATURE, X-PAYMENT');
+  res.setHeader('Access-Control-Expose-Headers', X402_EXPOSED_HEADERS);
+  res.setHeader('Access-Control-Max-Age', '600');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 // CORS configuration - allow only same hostname (different port)
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -88,7 +105,7 @@ const corsOptions = {
 // Additional middleware to validate origin matches Host header
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (!origin) {
+  if (!origin || req.path.startsWith('/paid/')) {
     next();
     return;
   }
@@ -119,7 +136,8 @@ const io = new SocketIOServer(httpServer, {
 });
 
 // Middleware
-app.use(cors(corsOptions));
+const sameHostCors = cors(corsOptions);
+app.use((req, res, next) => (req.path.startsWith('/paid/') ? next() : sameHostCors(req, res, next)));
 // 12mb: paid compute services carry base64 audio payloads (STT/TTS).
 app.use(express.json({ limit: '12mb' }));
 
