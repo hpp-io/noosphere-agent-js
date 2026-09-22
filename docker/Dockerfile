@@ -23,14 +23,16 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
-# Copy package.json only (not package-lock.json to avoid integrity hash conflicts with local registry)
-COPY package.json ./
+COPY package.json package-lock.json ./
 
-# Configure npm registry and install dependencies
-# Using npm install without lockfile when using local registry
+# Public registry: reproducible install from the lockfile (same as CI). A lockfile-less
+# `npm install` resolves the latest of every transitive dependency and broke the release
+# build (npm "Cannot read properties of null (reading 'edgesOut')") on 2026-09-22.
+# Local/mirror registry: the lockfile's integrity hashes may not match, so fall back to
+# `npm install` there.
 RUN npm config set registry ${NPM_REGISTRY} && \
     echo "Using npm registry: ${NPM_REGISTRY}" && \
-    npm install
+    if [ "${NPM_REGISTRY}" = "https://registry.npmjs.org" ]; then npm ci; else npm install; fi
 
 # -----------------------------------------------------------------------------
 # Stage 2: Builder
