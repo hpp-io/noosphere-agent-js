@@ -229,7 +229,7 @@ export class SellerService {
 
     const facilitators = this.config.facilitators ?? {};
     const defaultAsset = this.config.defaultAsset ?? {};
-    const opts = { payTo: this.payTo!, facilitators, defaultAsset };
+    const opts = { payTo: this.payTo!, facilitators, defaultAsset, log: this.log };
 
     // Input validation runs BEFORE payment so invalid input is rejected (400)
     // without charging the buyer. Generic JSON-Schema per service's inputSchema.

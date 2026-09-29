@@ -9,7 +9,7 @@
 import type { RequestHandler } from 'express';
 import { paymentMiddlewareFromConfig, x402ResourceServer, x402HTTPResourceServer } from '@x402/express';
 import type { SchemeRegistration } from '@x402/express';
-import { HTTPFacilitatorClient } from '@x402/core/server';
+import { RetryingFacilitatorClient } from './facilitator-client';
 import type { RoutesConfig, FacilitatorClient } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { UptoEvmScheme } from '@x402/evm/upto/server';
@@ -24,6 +24,8 @@ export interface SellerMiddlewareOptions {
   facilitators: Record<string, string>;
   /** Default asset per network (caip2). */
   defaultAsset: Record<string, X402SellerAssetConfig>;
+  /** Optional logger — facilitator transport retries are logged here. */
+  log?: { warn(msg: string): void };
 }
 
 export interface SellerMiddlewareResult {
@@ -137,7 +139,7 @@ export function buildSellerMiddleware(
     if (!opts.defaultAsset[net]) throw new Error(`x402Seller: no defaultAsset configured for network "${net}"`);
     if (!seenUrls.has(url)) {
       seenUrls.add(url);
-      facilitatorClients.push(new HTTPFacilitatorClient({ url }));
+      facilitatorClients.push(new RetryingFacilitatorClient({ url }, { log: opts.log }));
     }
     schemes.push({ network: net as Network, server: new ExactEvmScheme() });
     if (directServices.some((s) => s.network === net && s.schemes.includes('upto'))) {
@@ -173,7 +175,7 @@ export function buildReceiptGate(
     const url = opts.facilitators[net];
     if (!url) throw new Error(`x402Seller: no facilitator URL configured for network "${net}"`);
     if (!opts.defaultAsset[net]) throw new Error(`x402Seller: no defaultAsset configured for network "${net}"`);
-    if (!seenUrls.has(url)) seenUrls.set(url, new HTTPFacilitatorClient({ url }));
+    if (!seenUrls.has(url)) seenUrls.set(url, new RetryingFacilitatorClient({ url }, { log: opts.log }));
   }
 
   const server = new x402ResourceServer(Array.from(seenUrls.values()));
