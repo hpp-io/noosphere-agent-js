@@ -17,7 +17,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { randomUUID } from 'node:crypto';
 import { createPaymentWrapper, extractPaymentFromMeta, x402ResourceServer } from '@x402/mcp';
 import type { FacilitatorClient } from '@x402/core/server';
-import { HTTPFacilitatorClient } from '@x402/core/server';
+import { RetryingFacilitatorClient } from './facilitator-client';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { UptoEvmScheme } from '@x402/evm/upto/server';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
@@ -67,7 +67,7 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
     for (const svc of direct) {
       const url = deps.facilitators[svc.network];
       if (!url) throw new Error(`x402Seller: no facilitator URL configured for network "${svc.network}"`);
-      if (!seen.has(url)) seen.set(url, new HTTPFacilitatorClient({ url }));
+      if (!seen.has(url)) seen.set(url, new RetryingFacilitatorClient({ url }, { log: deps.log }));
     }
     clients = Array.from(seen.values());
   }
