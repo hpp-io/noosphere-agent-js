@@ -28,6 +28,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
     "@hpp-io/x402-mcp-bridge": "^0.1.9",
+    "@metamask/x402": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@noosphere/agent-core": "0.2.1-alpha.1",
     "@noosphere/contracts": "^0.2.2-alpha.1",

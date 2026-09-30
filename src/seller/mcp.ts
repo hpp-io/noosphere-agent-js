@@ -18,7 +18,8 @@ import { randomUUID } from 'node:crypto';
 import { createPaymentWrapper, extractPaymentFromMeta, x402ResourceServer } from '@x402/mcp';
 import type { FacilitatorClient } from '@x402/core/server';
 import { RetryingFacilitatorClient } from './facilitator-client';
-import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { x402ExactEvmErc7710ServerScheme } from '@metamask/x402';
+import { acceptSpec } from './routes';
 import { UptoEvmScheme } from '@x402/evm/upto/server';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import type { Network } from '@x402/core/types';
@@ -74,7 +75,7 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
 
   const rs = new x402ResourceServer(clients);
   for (const net of new Set(direct.map((s) => s.network))) {
-    rs.register(net as Network, new ExactEvmScheme());
+    rs.register(net as Network, new x402ExactEvmErc7710ServerScheme());
     if (direct.some((s) => s.network === net && s.schemes.includes('upto'))) {
       rs.register(net as Network, new UptoEvmScheme());
     }
@@ -95,15 +96,7 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
 
     const accepts = (
       await Promise.all(
-        svc.schemes.map((scheme) =>
-          rs.buildPaymentRequirements({
-            scheme,
-            network: svc.network as Network,
-            payTo: deps.payTo,
-            price: { amount: svc.x402Price, asset: asset.address, extra: { ...(asset.extra ?? {}) } },
-            maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
-          }),
-        ),
+        svc.schemes.map((scheme) => rs.buildPaymentRequirements(acceptSpec(scheme, svc, asset, deps.payTo))),
       )
     ).flat();
 
@@ -193,8 +186,8 @@ export async function mountSellerMcp(deps: McpMountDeps): Promise<{ tools: strin
             arguments: ctx.arguments as Record<string, unknown>,
             _meta: ctx.meta as Record<string, unknown> | undefined,
           });
-          const payer = (paymentPayload?.payload as { authorization?: { from?: string } } | undefined)
-            ?.authorization?.from;
+          const pl = paymentPayload?.payload as { authorization?: { from?: string }; delegator?: string } | undefined;
+          const payer = pl?.authorization?.from ?? pl?.delegator; // erc7710: the delegating smart account
 
           const jobId = randomUUID();
           deps.db.saveSellerJob({

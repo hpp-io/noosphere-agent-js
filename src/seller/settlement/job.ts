@@ -102,7 +102,8 @@ export function makeJobSubmitHandler(svc: SellerServiceEntry, deps: JobHandlerDe
     const { paymentPayload, paymentRequirements, declaredExtensions } = result;
     const payer: string | undefined =
       (paymentPayload as any)?.payload?.permit2Authorization?.owner ??
-      (paymentPayload as any)?.payload?.authorization?.from;
+      (paymentPayload as any)?.payload?.authorization?.from ??
+      (paymentPayload as any)?.payload?.delegator; // erc7710: the delegating smart account
 
     // Submit to the container FIRST — if it rejects (bad URL, over caps), the
     // buyer walks away unsettled and uncharged.

@@ -11,7 +11,7 @@ import { paymentMiddlewareFromConfig, x402ResourceServer, x402HTTPResourceServer
 import type { SchemeRegistration } from '@x402/express';
 import { RetryingFacilitatorClient } from './facilitator-client';
 import type { RoutesConfig, FacilitatorClient } from '@x402/core/server';
-import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { x402ExactEvmErc7710ServerScheme } from '@metamask/x402';
 import { UptoEvmScheme } from '@x402/evm/upto/server';
 import type { Network } from '@x402/core/types';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
@@ -60,6 +60,76 @@ export function synthesizeExample(schema?: Record<string, unknown>): Record<stri
  * Build the RoutesConfig (accepts + bazaar discovery extension) for the given
  * direct services. Exported separately so tests can inspect the route shape.
  */
+/**
+ * Pseudo-scheme a service lists in `schemes` to also accept ERC-7710 delegation
+ * payments (x402 exact + `assetTransferMethod: "erc7710"`): an agent pays from the
+ * USER's smart account under on-chain caps, holding no funds itself. Only the HPP
+ * facilitator redeems these, so list it next to "exact", never instead of it.
+ */
+export const ERC7710_SCHEME = 'erc7710';
+
+/**
+ * One 402 `accepts` entry for a declared scheme. `erc7710` becomes an `exact`
+ * accept marked `assetTransferMethod: "erc7710"` (the @metamask/x402 server scheme
+ * then adds the facilitator's `facilitatorAddresses`). When a service offers both,
+ * the plain exact accept is marked `eip3009` explicitly: the core matches a
+ * payload to the first accept whose `extra` is a SUBSET of the payload's, and
+ * `{name, version}` ⊆ an erc7710 payload's extra — the explicit method keeps a
+ * delegation payment from being verified against the EIP-3009 requirement.
+ */
+export function acceptSpec(
+  scheme: string,
+  svc: SellerServiceEntry,
+  asset: X402SellerAssetConfig,
+  payTo: string,
+): { scheme: string; network: Network; payTo: string; price: { amount: string; asset: string; extra: Record<string, unknown> }; maxTimeoutSeconds: number } {
+  const both = svc.schemes.includes(ERC7710_SCHEME) && svc.schemes.includes('exact');
+  const method =
+    scheme === ERC7710_SCHEME ? { assetTransferMethod: 'erc7710' } : scheme === 'exact' && both ? { assetTransferMethod: 'eip3009' } : {};
+  return {
+    scheme: scheme === ERC7710_SCHEME ? 'exact' : scheme,
+    network: svc.network as Network,
+    payTo,
+    price: {
+      amount: svc.x402Price,
+      asset: asset.address,
+      extra: { ...(asset.extra ?? {}), ...method },
+    },
+    // Also the buyer's signature validity window (upto signs deadline =
+    // now + maxTimeoutSeconds) — async/job services need hours, not 10min.
+    maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
+  };
+}
+
+/**
+ * Best-effort boot check: a service advertising `erc7710` needs a facilitator that
+ * redeems delegations (its `/supported` exact kind carries `extra.erc7710`). Logs
+ * only — the 402 still goes out, and a client with a delegation would simply be
+ * refused by the facilitator, so the operator must fix the facilitator or drop
+ * the scheme.
+ */
+export function warnIfFacilitatorLacksErc7710(
+  directServices: SellerServiceEntry[],
+  opts: SellerMiddlewareOptions,
+): void {
+  const nets = new Set(directServices.filter((s) => s.schemes.includes(ERC7710_SCHEME)).map((s) => s.network));
+  for (const net of nets) {
+    const url = opts.facilitators[net];
+    if (!url) continue;
+    fetch(`${url.replace(/\/$/, '')}/supported`)
+      .then((r) => r.json())
+      .then((j: { kinds?: { scheme: string; network: string; extra?: Record<string, unknown> }[] }) => {
+        const kind = (j.kinds ?? []).find((k) => k.scheme === 'exact' && k.network === net);
+        if (!kind?.extra?.erc7710 || !Array.isArray(kind.extra.facilitatorAddresses)) {
+          opts.log?.warn(
+            `[x402-seller] services on ${net} advertise "erc7710" but facilitator ${url} does not redeem ERC-7710 delegations (/supported lacks extra.erc7710) — delegation payments will be refused`,
+          );
+        }
+      })
+      .catch((err) => opts.log?.warn(`[x402-seller] erc7710 support check against ${url} failed: ${(err as Error).message}`));
+  }
+}
+
 export function buildSellerRoutes(
   directServices: SellerServiceEntry[],
   opts: SellerMiddlewareOptions,
@@ -93,19 +163,7 @@ export function buildSellerRoutes(
       // One accept per declared scheme, in the seller's priority order. For
       // upto, x402Price is the ceiling (max authorization) — the actual settle
       // amount is decided by the settling code (≤ ceiling).
-      accepts: svc.schemes.map((scheme) => ({
-        scheme,
-        network: svc.network as Network,
-        payTo: opts.payTo,
-        price: {
-          amount: svc.x402Price,
-          asset: asset.address,
-          extra: { ...(asset.extra ?? {}) },
-        },
-        // Also the buyer's signature validity window (upto signs deadline =
-        // now + maxTimeoutSeconds) — async/job services need hours, not 10min.
-        maxTimeoutSeconds: svc.maxTimeoutSeconds ?? 600,
-      })),
+      accepts: svc.schemes.map((scheme) => acceptSpec(scheme, svc, asset, opts.payTo)),
       description: svc.description,
       // upto pays via Permit2; buyers without a standing allowance need the
       // eip2612GasSponsoring declaration or their client never bundles the
@@ -141,13 +199,14 @@ export function buildSellerMiddleware(
       seenUrls.add(url);
       facilitatorClients.push(new RetryingFacilitatorClient({ url }, { log: opts.log }));
     }
-    schemes.push({ network: net as Network, server: new ExactEvmScheme() });
+    schemes.push({ network: net as Network, server: new x402ExactEvmErc7710ServerScheme() });
     if (directServices.some((s) => s.network === net && s.schemes.includes('upto'))) {
       schemes.push({ network: net as Network, server: new UptoEvmScheme() });
     }
   }
 
   const routes = buildSellerRoutes(directServices, opts);
+  warnIfFacilitatorLacksErc7710(directServices, opts);
   const middleware = paymentMiddlewareFromConfig(routes, facilitatorClients, schemes);
   return { middleware, routeKeys: Object.keys(routes) };
 }
@@ -180,7 +239,7 @@ export function buildReceiptGate(
 
   const server = new x402ResourceServer(Array.from(seenUrls.values()));
   for (const net of networks) {
-    server.register(net as Network, new ExactEvmScheme());
+    server.register(net as Network, new x402ExactEvmErc7710ServerScheme());
     if (receiptServices.some((s) => s.network === net && s.schemes.includes('upto'))) {
       server.register(net as Network, new UptoEvmScheme());
     }

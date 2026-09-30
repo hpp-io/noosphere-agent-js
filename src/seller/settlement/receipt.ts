@@ -90,7 +90,9 @@ export function makeReceiptHandler(svc: SellerServiceEntry, deps: ReceiptHandler
     }
     const { paymentPayload, paymentRequirements, declaredExtensions } = result;
     const payer: string | undefined =
-      (paymentPayload as any)?.payload?.authorization?.from ?? (paymentPayload as any)?.payload?.from;
+      (paymentPayload as any)?.payload?.authorization?.from ??
+      (paymentPayload as any)?.payload?.delegator ?? // erc7710: the delegating smart account
+      (paymentPayload as any)?.payload?.from;
 
     const jobId = randomUUID();
     deps.db.saveSellerJob({

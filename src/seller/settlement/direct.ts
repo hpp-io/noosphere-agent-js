@@ -39,7 +39,7 @@ function readPayment(req: Request): { payer?: string; scheme?: string } {
   if (!header) return {};
   const p = decodeB64Json(header);
   return {
-    payer: p?.payload?.authorization?.from ?? p?.payload?.from,
+    payer: p?.payload?.authorization?.from ?? p?.payload?.delegator ?? p?.payload?.from, // delegator = erc7710 smart account
     scheme: p?.scheme,
   };
 }
