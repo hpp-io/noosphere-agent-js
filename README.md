@@ -326,6 +326,7 @@ substitution and live in `.env`.
 | `containerId` | Which `containers[]` entry runs the work |
 | `settlement` | `"direct"` — run locally, settle per call *(on-chain dispatch mode: roadmap)* |
 | `network` / `schemes` | Payment network + schemes (`["exact"]`) |
+| `schemes: ["exact", "erc7710"]` | Also accept ERC-7710 **delegation payments**: an agent pays from the user's smart account under on-chain caps, holding no funds itself (needs the HPP facilitator; the seller advertises both, standard clients keep paying the first `exact` accept) |
 | `x402Price` | Price per call, atomic USDC.e (6 decimals — `"5000"` = $0.005) |
 | `inputSchema` | JSON Schema; invalid input rejected with 400 **before** payment |
 | `receipt` | `true` → embed a verifiable execution receipt |
